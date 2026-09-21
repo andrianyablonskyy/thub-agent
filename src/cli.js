@@ -3,7 +3,7 @@
 
 const { Command } = require('commander');
 const { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState } = require('@thub/shared');
-const { resolveConnection, writeConfigFile, readConfigFile } = require('./config');
+const { resolveConnection, resolveGroup, writeConfigFile, readConfigFile } = require('./config');
 const { parseDurationSec } = require('./duration');
 const { followJob } = require('./streaming');
 
@@ -30,6 +30,11 @@ program
   .requiredOption('--type <hw|sw>', 'Required resource type')
   .option('--board <name>', 'Shorthand for --label board:<name>')
   .option('--label <label>', 'Required label the resource must have (repeatable)', collectRepeatable, [])
+  .option(
+    '--group <groupId>',
+    'Restrict scheduling to resources that are members of this group (§13.1). ' +
+      'Overrides THUB_GROUP / config file; leave unset for an unconstrained run.'
+  )
   .requiredOption('--image <url>', 'Firmware/build image URL (Artifactory or a Docker registry blob) fetched by the Client')
   .option('--sha256 <hex>', 'Expected sha256 of --image; the Client verifies it before flashing/running')
   .requiredOption('--tests <url>', 'Test package URL in Artifactory')
@@ -60,9 +65,10 @@ program
       const source = opts.source || (process.env.GITHUB_ACTIONS === 'true' ? 'ci' : 'cli');
       const labels = [...(opts.board ? [`board:${opts.board}`] : []), ...opts.label];
       const meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2)));
+      const group = resolveGroup({ group: opts.group });
 
       const spec = {
-        target: { type: opts.type, labels },
+        target: { type: opts.type, labels, ...(group ? { group } : {}) },
         firmware: { url: opts.image, ...(opts.sha256 ? { sha256: opts.sha256 } : {}) },
         tests: { url: opts.tests, suite: opts.suite, args: opts.arg },
         timeoutSec: parseDurationSec(opts.timeout),
@@ -174,11 +180,11 @@ program
 const config = program.command('config').description('Manage local Agent configuration');
 config
   .command('set')
-  .argument('<key>', 'url | token')
+  .argument('<key>', 'url | token | group')
   .argument('<value>')
   .action((key, value) => {
-    if (!['url', 'token'].includes(key)) {
-      console.error('Error: key must be "url" or "token"');
+    if (!['url', 'token', 'group'].includes(key)) {
+      console.error('Error: key must be "url", "token", or "group"');
       process.exit(EXIT_CODES.USAGE);
     }
     const current = readConfigFile();

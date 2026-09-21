@@ -45,4 +45,12 @@ function resolveConnection(flags = {}) {
   return { url, token };
 }
 
-module.exports = { CONFIG_PATH, readConfigFile, writeConfigFile, resolveConnection };
+// Optional default for `--group` (§4.3/§7.1) — same flags > env > file
+// precedence as url/token, but unset is fine: a job just runs unconstrained
+// by group, same as if `groups` had never been used at all.
+function resolveGroup(flags = {}) {
+  const file = { ...readJsonFile(PACKAGE_DEFAULT_CONFIG_PATH), ...readConfigFile() };
+  return flags.group || process.env.THUB_GROUP || file.group || undefined;
+}
+
+module.exports = { CONFIG_PATH, readConfigFile, writeConfigFile, resolveConnection, resolveGroup };
