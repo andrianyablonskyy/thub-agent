@@ -48,6 +48,12 @@ program
     []
   )
   .option('--source <ci|cli>', 'Override auto-detected job source')
+  .option(
+    '--dry-run',
+    'Exercise the full pipeline (schedule, accept, state transitions, logs, artifact, result) ' +
+      'without the Client flashing/running anything for real',
+    false
+  )
   .action(async (opts) => {
     try {
       const c = client();
@@ -63,6 +69,7 @@ program
         priority: opts.priority ?? (source === 'ci' ? 50 : 60),
         source,
         ...(Object.keys(meta).length ? { meta } : {}),
+        ...(opts.dryRun ? { dryRun: true } : {}),
       };
 
       const result = await c.post('/jobs', spec);
