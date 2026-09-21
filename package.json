@@ -1,0 +1,13 @@
+{
+  "name": "@yourorg/thub-agent",
+  "version": "1.0.0",
+  "description": "TestHub Agent CLI — the single entry point CI/CD and developers use to submit and follow test jobs",
+  "bin": {
+    "thub": "./src/cli.js"
+  },
+  "main": "src/cli.js",
+  "dependencies": {
+    "@thub/shared": "*",
+    "commander": "^13.1.0"
+  }
+}
