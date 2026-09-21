@@ -30,15 +30,23 @@ program
   .requiredOption('--type <hw|sw>', 'Required resource type')
   .option('--board <name>', 'Shorthand for --label board:<name>')
   .option('--label <label>', 'Required label the resource must have (repeatable)', collectRepeatable, [])
-  .requiredOption('--image <url>', 'Firmware image URL in Artifactory')
+  .requiredOption('--image <url>', 'Firmware/build image URL (Artifactory or a Docker registry blob) fetched by the Client')
+  .option('--sha256 <hex>', 'Expected sha256 of --image; the Client verifies it before flashing/running')
   .requiredOption('--tests <url>', 'Test package URL in Artifactory')
   .option('--suite <name>', 'Test suite name', 'default')
+  .option('--arg <value>', 'Extra argument passed through to run-tests.sh on the Client (repeatable)', collectRepeatable, [])
   .option('--timeout <duration>', 'e.g. 30m, 1h', '30m')
   .option('--priority <n>', 'Priority 0-100', (v) => Number(v))
   .option('--wait', 'Do not detach on job end; exit with the verdict code (used in CI)', false)
   .option('--detach', 'Print the job id and exit immediately', false)
   .option('--json', 'Machine-readable output', false)
-  .option('--meta <keyValue>', 'Extra metadata key=value (repeatable)', collectRepeatable, [])
+  .option(
+    '--meta <keyValue>',
+    'Extra metadata key=value, stored on the job and returned by `thub status --json` (repeatable). ' +
+      'Use this to carry CI job ids, git repo/branch/sha/tag, or anything else you want attached to the run.',
+    collectRepeatable,
+    []
+  )
   .option('--source <ci|cli>', 'Override auto-detected job source')
   .action(async (opts) => {
     try {
@@ -49,8 +57,8 @@ program
 
       const spec = {
         target: { type: opts.type, labels },
-        firmware: { url: opts.image },
-        tests: { url: opts.tests, suite: opts.suite },
+        firmware: { url: opts.image, ...(opts.sha256 ? { sha256: opts.sha256 } : {}) },
+        tests: { url: opts.tests, suite: opts.suite, args: opts.arg },
         timeoutSec: parseDurationSec(opts.timeout),
         priority: opts.priority ?? (source === 'ci' ? 50 : 60),
         source,
