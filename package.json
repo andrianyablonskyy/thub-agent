@@ -7,7 +7,7 @@
   },
   "main": "src/cli.js",
   "dependencies": {
-    "@thub/shared": "*",
+    "@andrian.yablonskyy/test-hub": "*",
     "commander": "^13.1.0"
   }
 }

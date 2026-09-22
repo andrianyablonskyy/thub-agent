@@ -1,8 +1,22 @@
 #!/usr/bin/env node
+
+/**
+ * @file        packages/agent/src/cli.js
+ * @description thub CLI entry point: run/status/cancel/resources/jobs/config commands (README §7)
+ *
+ * @author      Andrian Yablonskyy
+ * @copyright   Copyright (c) 2026 Andrian Yablonskyy. All rights reserved.
+ *
+ * This file is part of TestHub and is proprietary and confidential.
+ * Unauthorized copying, modification, distribution, or use of this file,
+ * via any medium, is strictly prohibited without prior written permission
+ * from AdSystem.PRO.
+ */
+
 'use strict';
 
 const { Command } = require('commander');
-const { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState } = require('@thub/shared');
+const { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState } = require('@andrian.yablonskyy/test-hub');
 const { resolveConnection, resolveGroup, writeConfigFile, readConfigFile } = require('./config');
 const { parseDurationSec } = require('./duration');
 const { followJob } = require('./streaming');
