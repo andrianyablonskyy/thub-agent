@@ -1,6 +1,6 @@
 /**
  * @file        eslint.config.js
- * @description ESLint flat config for @yourorg/thub-agent: stylistic/promise rules plus Node globals
+ * @description ESLint flat config for @andrian.yablonskyy/thub-agent: stylistic/promise rules plus Node globals
  *
  * @author      Andrian Yablonskyy
  * @copyright   Copyright (c) 2026 Andrian Yablonskyy. All rights reserved.

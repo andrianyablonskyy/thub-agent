@@ -1,4 +1,4 @@
-# @yourorg/thub-agent
+# @andrian.yablonskyy/thub-agent
 
 The Agent CLI (`thub`) for [TestHub](https://github.com/andrianyablonskyy/thub) — a self-hosted job network that lets CI/CD pipelines and individual developers run firmware tests on real hardware or emulators in a private lab. `thub` is the single entry point for both: it's stateless, everything it knows comes from the [Coordinator](https://github.com/andrianyablonskyy/thub-coordinator) API, and it runs identically on a GitHub-hosted runner and a developer laptop — a developer reproducing a CI failure runs exactly the same command the pipeline runs.
 
@@ -7,9 +7,9 @@ See the [main TestHub repo](https://github.com/andrianyablonskyy/thub) for the f
 ## Install
 
 ```bash
-npm install -g @yourorg/thub-agent
+npm install -g @andrian.yablonskyy/thub-agent
 # or, one-off in CI:
-npx -y @yourorg/thub-agent run --type sw --image "$IMAGE_URL" --tests "$TESTS_URL" --wait
+npx -y @andrian.yablonskyy/thub-agent run --type sw --image "$IMAGE_URL" --tests "$TESTS_URL" --wait
 ```
 
 ## Configuration
@@ -120,7 +120,7 @@ test-sw:
     THUB_TOKEN: ${{ secrets.THUB_AGENT_TOKEN }}
   steps:
     - run: |
-        npx -y @yourorg/thub-agent run --type sw \
+        npx -y @andrian.yablonskyy/thub-agent run --type sw \
           --image "${{ needs.build.outputs.image_url }}" \
           --tests "${{ needs.build.outputs.tests_url }}" --suite full --wait
 ```

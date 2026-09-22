@@ -16,7 +16,7 @@
 'use strict';
 
 const { Command } = require('commander'),
-  { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState } = require('@andrian.yablonskyy/test-hub'),
+  { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState } = require('@andrian.yablonskyy/thub-common'),
   { resolveConnection, resolveGroup, resolveUser, writeConfigFile, readConfigFile } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming');
