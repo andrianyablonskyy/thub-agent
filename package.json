@@ -6,8 +6,18 @@
     "thub": "./src/cli.js"
   },
   "main": "src/cli.js",
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
   "dependencies": {
     "@andrian.yablonskyy/test-hub": "*",
     "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "eslint": "^10.11.0",
+    "eslint-plugin-promise": "^7.3.0",
+    "globals": "^17.12.0"
   }
 }
