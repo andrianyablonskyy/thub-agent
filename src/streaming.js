@@ -13,7 +13,7 @@
 
 'use strict';
 
-const { exitCodeForJobState, EXIT_CODES } = require('@andrian.yablonskyy/test-hub');
+const { exitCodeForJobState, EXIT_CODES } = require('@andrian.yablonskyy/thub-common');
 
 /**
  * Streams a job's logs until it reaches a terminal state, or the user
