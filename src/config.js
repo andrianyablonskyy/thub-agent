@@ -1,6 +1,6 @@
 /**
  * @file        packages/agent/src/config.js
- * @description Agent config resolution: flags > env > config file > bundled default (url/token/group)
+ * @description Agent config resolution: flags > env > config file > bundled default (url/token/group/user)
  *
  * @author      Andrian Yablonskyy
  * @copyright   Copyright (c) 2026 Andrian Yablonskyy. All rights reserved.
@@ -67,4 +67,13 @@ function resolveGroup(flags = {}){
   return flags.group || process.env.THUB_GROUP || file.group || undefined;
 }
 
-module.exports = { CONFIG_PATH, readConfigFile, writeConfigFile, resolveConnection, resolveGroup };
+// Optional default for `--user` (§4.3/§7.1) — same flags > env > file
+// precedence as group. Purely a label (who submitted this job), not an
+// identity: unset is fine, and nothing on the Coordinator side enforces
+// or authenticates it.
+function resolveUser(flags = {}){
+  const file = { ...readJsonFile(PACKAGE_DEFAULT_CONFIG_PATH), ...readConfigFile() };
+  return flags.user || process.env.THUB_USER || file.user || undefined;
+}
+
+module.exports = { CONFIG_PATH, readConfigFile, writeConfigFile, resolveConnection, resolveGroup, resolveUser };

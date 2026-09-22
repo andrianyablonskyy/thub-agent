@@ -17,7 +17,7 @@
 
 const { Command } = require('commander'),
   { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState } = require('@andrian.yablonskyy/test-hub'),
-  { resolveConnection, resolveGroup, writeConfigFile, readConfigFile } = require('./config'),
+  { resolveConnection, resolveGroup, resolveUser, writeConfigFile, readConfigFile } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming');
 
@@ -48,6 +48,11 @@ program
     '--group <groupId>',
     'Restrict scheduling to resources that are members of this group (§13.1). ' +
       'Overrides THUB_GROUP / config file; leave unset for an unconstrained run.'
+  )
+  .option(
+    '--user <name>',
+    'Free-text job owner, shown on the Client and the dashboard to tell whose job is whose ' +
+      '— purely a label, not an identity. Overrides THUB_USER / config file.'
   )
   .requiredOption('--image <url>', 'Firmware/build image URL (Artifactory or a Docker registry blob) fetched by the Client')
   .option('--sha256 <hex>', 'Expected sha256 of --image; the Client verifies it before flashing/running')
@@ -80,6 +85,7 @@ program
         labels = [...(opts.board ? [`board:${opts.board}`] : []), ...opts.label],
         meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
         group = resolveGroup({ group: opts.group }),
+        user = resolveUser({ user: opts.user }),
 
         spec = {
           target: { type: opts.type, labels, ...(group ? { group } : {}) },
@@ -88,6 +94,7 @@ program
           timeoutSec: parseDurationSec(opts.timeout),
           priority: opts.priority ?? (source === 'ci' ? 50 : 60),
           source,
+          ...(user ? { user } : {}),
           ...(Object.keys(meta).length ? { meta } : {}),
           ...(opts.dryRun ? { dryRun: true } : {})
         },
@@ -199,6 +206,7 @@ program
       printTable(jobs, [
         ['ID', (j) => j.id],
         ['SOURCE', (j) => j.source],
+        ['USER', (j) => j.spec.user || '-'],
         ['STATE', (j) => j.state],
         ['CREATED', (j) => j.created_at]
       ]);
@@ -211,11 +219,11 @@ program
 const config = program.command('config').description('Manage local Agent configuration');
 config
   .command('set')
-  .argument('<key>', 'url | token | group')
+  .argument('<key>', 'url | token | group | user')
   .argument('<value>')
   .action((key, value) => {
-    if (!['url', 'token', 'group'].includes(key)){
-      console.error('Error: key must be "url", "token", or "group"');
+    if (!['url', 'token', 'group', 'user'].includes(key)){
+      console.error('Error: key must be "url", "token", "group", or "user"');
       process.exit(EXIT_CODES.USAGE);
     }
     const current = readConfigFile();
