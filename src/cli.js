@@ -15,11 +15,11 @@
 
 'use strict';
 
-const { Command } = require('commander');
-const { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState } = require('@andrian.yablonskyy/test-hub');
-const { resolveConnection, resolveGroup, writeConfigFile, readConfigFile } = require('./config');
-const { parseDurationSec } = require('./duration');
-const { followJob } = require('./streaming');
+const { Command } = require('commander'),
+  { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState } = require('@andrian.yablonskyy/test-hub'),
+  { resolveConnection, resolveGroup, writeConfigFile, readConfigFile } = require('./config'),
+  { parseDurationSec } = require('./duration'),
+  { followJob } = require('./streaming');
 
 const program = new Command();
 program
@@ -28,12 +28,12 @@ program
   .option('--url <url>', 'Coordinator URL (overrides THUB_URL / config file)')
   .option('--token <token>', 'Agent token (overrides THUB_TOKEN / config file)');
 
-function client() {
+function client(){
   const { url, token } = resolveConnection(program.opts());
   return new ApiClient({ baseUrl: url, token });
 }
 
-function fail(err) {
+function fail(err){
   console.error(`Error: ${err.message}`);
   process.exit(err.status && Number.isInteger(err.status) && err.status < 100 ? err.status : EXIT_CODES.USAGE);
 }
@@ -75,32 +75,39 @@ program
   )
   .action(async (opts) => {
     try {
-      const c = client();
-      const source = opts.source || (process.env.GITHUB_ACTIONS === 'true' ? 'ci' : 'cli');
-      const labels = [...(opts.board ? [`board:${opts.board}`] : []), ...opts.label];
-      const meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2)));
-      const group = resolveGroup({ group: opts.group });
+      const c = client(),
+        source = opts.source || (process.env.GITHUB_ACTIONS === 'true' ? 'ci' : 'cli'),
+        labels = [...(opts.board ? [`board:${opts.board}`] : []), ...opts.label],
+        meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
+        group = resolveGroup({ group: opts.group }),
 
-      const spec = {
-        target: { type: opts.type, labels, ...(group ? { group } : {}) },
-        firmware: { url: opts.image, ...(opts.sha256 ? { sha256: opts.sha256 } : {}) },
-        tests: { url: opts.tests, suite: opts.suite, args: opts.arg },
-        timeoutSec: parseDurationSec(opts.timeout),
-        priority: opts.priority ?? (source === 'ci' ? 50 : 60),
-        source,
-        ...(Object.keys(meta).length ? { meta } : {}),
-        ...(opts.dryRun ? { dryRun: true } : {}),
-      };
+        spec = {
+          target: { type: opts.type, labels, ...(group ? { group } : {}) },
+          firmware: { url: opts.image, ...(opts.sha256 ? { sha256: opts.sha256 } : {}) },
+          tests: { url: opts.tests, suite: opts.suite, args: opts.arg },
+          timeoutSec: parseDurationSec(opts.timeout),
+          priority: opts.priority ?? (source === 'ci' ? 50 : 60),
+          source,
+          ...(Object.keys(meta).length ? { meta } : {}),
+          ...(opts.dryRun ? { dryRun: true } : {})
+        },
 
-      const result = await c.post('/jobs', spec);
-      if (opts.json) console.log(JSON.stringify(result));
-      else console.log(`Job ${result.jobId} queued`);
+        result = await c.post('/jobs', spec);
+      if (opts.json){
+        console.log(JSON.stringify(result));
+      }
+      else {
+        console.log(`Job ${result.jobId} queued`);
+      }
 
-      if (opts.detach) return process.exit(0);
+      if (opts.detach){
+        return process.exit(0);
+      }
 
       const code = await followJob(c, result.jobId, { waitMode: opts.wait });
       process.exit(code);
-    } catch (err) {
+    }
+    catch (err){
       fail(err);
     }
   });
@@ -112,9 +119,9 @@ program
   .option('--json', 'Machine-readable output', false)
   .action(async (jobId, opts) => {
     try {
-      const c = client();
-      const job = await c.get(`/jobs/${jobId}`);
-      if (opts.json && !ACTIVE_JOB_STATES.has(job.state)) {
+      const c = client(),
+        job = await c.get(`/jobs/${jobId}`);
+      if (opts.json && !ACTIVE_JOB_STATES.has(job.state)){
         console.log(JSON.stringify(job));
         return process.exit(exitCodeForJobState(job.state));
       }
@@ -122,16 +129,19 @@ program
       console.log(`Job ${job.id} — ${job.state}${job.resource ? ' on ' + job.resource.name : ''}`);
       console.log(`Created: ${job.created_at}`);
 
-      if (ACTIVE_JOB_STATES.has(job.state)) {
+      if (ACTIVE_JOB_STATES.has(job.state)){
         const code = await followJob(c, jobId, { fromSeq: 0, waitMode: false });
         return process.exit(code);
       }
 
       const { artifacts } = await c.get(`/jobs/${jobId}/artifacts`);
       console.log(`Verdict: ${job.state}`);
-      for (const a of artifacts) console.log(`  ${a.name}  ${a.url}`);
+      for (const a of artifacts){
+        console.log(`  ${a.name}  ${a.url}`);
+      }
       process.exit(exitCodeForJobState(job.state));
-    } catch (err) {
+    }
+    catch (err){
       fail(err);
     }
   });
@@ -144,7 +154,8 @@ program
     try {
       const job = await client().post(`/jobs/${jobId}/cancel`);
       console.log(`Job ${job.id} -> ${job.state}`);
-    } catch (err) {
+    }
+    catch (err){
       fail(err);
     }
   });
@@ -156,16 +167,19 @@ program
   .action(async (opts) => {
     try {
       const { resources } = await client().get('/resources');
-      if (opts.json) return console.log(JSON.stringify(resources));
+      if (opts.json){
+        return console.log(JSON.stringify(resources));
+      }
       printTable(resources, [
         ['NAME', (r) => r.name],
         ['TYPE', (r) => r.type],
         ['STATUS', (r) => r.status],
         ['BUSY', (r) => r.busySource || '-'],
         ['LABELS', (r) => r.labels.join(',')],
-        ['LAST HEARTBEAT', (r) => r.lastHeartbeatAt || 'never'],
+        ['LAST HEARTBEAT', (r) => r.lastHeartbeatAt || 'never']
       ]);
-    } catch (err) {
+    }
+    catch (err){
       fail(err);
     }
   });
@@ -179,14 +193,17 @@ program
   .action(async (opts) => {
     try {
       const { jobs } = await client().get('/jobs', { query: { mine: opts.mine, state: opts.state } });
-      if (opts.json) return console.log(JSON.stringify(jobs));
+      if (opts.json){
+        return console.log(JSON.stringify(jobs));
+      }
       printTable(jobs, [
         ['ID', (j) => j.id],
         ['SOURCE', (j) => j.source],
         ['STATE', (j) => j.state],
-        ['CREATED', (j) => j.created_at],
+        ['CREATED', (j) => j.created_at]
       ]);
-    } catch (err) {
+    }
+    catch (err){
       fail(err);
     }
   });
@@ -197,7 +214,7 @@ config
   .argument('<key>', 'url | token | group')
   .argument('<value>')
   .action((key, value) => {
-    if (!['url', 'token', 'group'].includes(key)) {
+    if (!['url', 'token', 'group'].includes(key)){
       console.error('Error: key must be "url", "token", or "group"');
       process.exit(EXIT_CODES.USAGE);
     }
@@ -206,19 +223,21 @@ config
     console.log(`Saved ${key} to config`);
   });
 
-function collectRepeatable(value, previous) {
+function collectRepeatable(value, previous){
   return [...previous, value];
 }
 
-function printTable(rows, columns) {
-  if (rows.length === 0) {
+function printTable(rows, columns){
+  if (rows.length === 0){
     console.log('(none)');
     return;
   }
-  const widths = columns.map(([header], i) => Math.max(header.length, ...rows.map((r) => String(columns[i][1](r)).length)));
-  const line = (cells) => cells.map((c, i) => String(c).padEnd(widths[i])).join('  ');
+  const widths = columns.map(([header], i) => Math.max(header.length, ...rows.map((r) => String(columns[i][1](r)).length))),
+    line = (cells) => cells.map((c, i) => String(c).padEnd(widths[i])).join('  ');
   console.log(line(columns.map(([h]) => h)));
-  for (const row of rows) console.log(line(columns.map(([, f]) => f(row))));
+  for (const row of rows){
+    console.log(line(columns.map(([, f]) => f(row))));
+  }
 }
 
 program.parseAsync(process.argv);
