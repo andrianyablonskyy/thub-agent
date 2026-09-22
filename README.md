@@ -7,7 +7,7 @@ See the [main TestHub repo](https://github.com/andrianyablonskyy/thub) for the f
 ## Install
 
 ```bash
-npm install -g @andrian.yablonskyy/thub-agent
+npm i -g @andrian.yablonskyy/thub-agent
 # or, one-off in CI:
 npx -y @andrian.yablonskyy/thub-agent run --type sw --image "$IMAGE_URL" --tests "$TESTS_URL" --wait
 ```
