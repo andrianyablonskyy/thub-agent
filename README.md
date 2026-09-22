@@ -14,7 +14,7 @@ npx -y @andrian.yablonskyy/thub-agent run --type sw --image "$IMAGE_URL" --tests
 
 ## Configuration
 
-Read from flags, then environment (`THUB_URL`, `THUB_TOKEN`, `THUB_GROUP`, `THUB_USER`), then `~/.config/thub/config.json`, then a bundled default. `url`/`token` are required by the time a command actually talks to the Coordinator; `group`/`user` are optional everywhere.
+Read from flags, then environment (`THUB_URL`, `THUB_TOKEN`, `THUB_GROUP`, `THUB_USER`), then `~/.config/thub/agent.json`, then a bundled default. `url`/`token` are required by the time a command actually talks to the Coordinator; `group`/`user` are optional everywhere.
 
 ```bash
 thub config set url https://thub.example.com

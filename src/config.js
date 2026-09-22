@@ -18,8 +18,8 @@ const fs = require('node:fs'),
   path = require('node:path');
 
 // §7: "Configuration is read from flags, then environment (THUB_URL,
-// THUB_TOKEN), then ~/.config/thub/config.json."
-const CONFIG_PATH = path.join(os.homedir(), '.config', 'thub', 'config.json'),
+// THUB_TOKEN), then ~/.config/thub/agent.json."
+const CONFIG_PATH = path.join(os.homedir(), '.config', 'thub', 'agent.json'),
 
   // Bundled with the package as a last-resort default, below the user's own
   // config file, so `thub` has something to fall back on before `config set`
