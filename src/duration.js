@@ -1,3 +1,16 @@
+/**
+ * @file        packages/agent/src/duration.js
+ * @description Parses human-readable durations (e.g. 30m, 1h) into seconds
+ *
+ * @author      Andrian Yablonskyy
+ * @copyright   Copyright (c) 2026 Andrian Yablonskyy. All rights reserved.
+ *
+ * This file is part of TestHub and is proprietary and confidential.
+ * Unauthorized copying, modification, distribution, or use of this file,
+ * via any medium, is strictly prohibited without prior written permission
+ * from AdSystem.PRO.
+ */
+
 'use strict';
 
 const UNITS = { s: 1, m: 60, h: 3600, d: 86400 };
