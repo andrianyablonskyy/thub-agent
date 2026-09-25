@@ -19,7 +19,8 @@ const { Command } = require('commander'),
   { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState } = require('@andrian.yablonskyy/thub-common'),
   { resolveConnection, resolveGroup, resolveUser, writeConfigFile, readConfigFile } = require('./config'),
   { parseDurationSec } = require('./duration'),
-  { followJob } = require('./streaming');
+  { followJob } = require('./streaming'),
+  { version } = require('../package.json');
 
 const program = new Command();
 program
@@ -30,7 +31,7 @@ program
 
 function client(){
   const { url, token } = resolveConnection(program.opts());
-  return new ApiClient({ baseUrl: url, token });
+  return new ApiClient({ baseUrl: url, token, userAgent: `thub-agent/${version}` });
 }
 
 function fail(err){
