@@ -34,7 +34,12 @@ thub cancel   <jobId>          Cancel a job
 thub resources                 List resources and their status
 thub jobs     [--mine] [--state <s>]   List recent jobs
 thub config   set <key> <value>        Save coordinator URL / token / default group / default user locally
+thub check-update                      Compare this Agent with the latest published version
+thub self-update [--to <x.y.z>]        Update this Agent with npm i -g
+thub --version
 ```
+
+**Self-update.** An admin can request an update for this agent (or all agents) on the Coordinator's Agents page. The next command that talks to the Coordinator then installs it with `npm i -g` (retrying through `sudo` on an interactive terminal) and re-runs itself on the new version. If the install fails — e.g. no permission in CI — it prints the manual command and carries on with the current version; a run never fails because of an update. Set `THUB_NO_SELF_UPDATE=1` to opt out.
 
 Key options for `thub run`:
 
