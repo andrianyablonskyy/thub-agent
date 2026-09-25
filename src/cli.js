@@ -16,18 +16,37 @@
 'use strict';
 
 const { Command } = require('commander'),
-  { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState } = require('@andrian.yablonskyy/thub-common'),
+  { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion } =
+    require('@andrian.yablonskyy/thub-common'),
   { resolveConnection, resolveGroup, resolveUser, writeConfigFile, readConfigFile } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming'),
-  { version } = require('../package.json');
+  { applyRequestedUpdate, installAgent, version } = require('./self-update');
 
 const program = new Command();
 program
   .name('thub')
   .description('TestHub Agent — submit test jobs and follow them, from CI or your laptop')
   .option('--url <url>', 'Coordinator URL (overrides THUB_URL / config file)')
-  .option('--token <token>', 'Agent token (overrides THUB_TOKEN / config file)');
+  .option('--token <token>', 'Agent token (overrides THUB_TOKEN / config file)')
+  .version(version);
+
+// An admin-requested self-update (README §10.2) is applied at the start of
+// the next run of any command that talks to the Coordinator.
+const NO_UPDATE_CHECK = new Set(['config', 'set', 'check-update', 'self-update']);
+program.hook('preAction', async (thisCommand, actionCommand) => {
+  if (NO_UPDATE_CHECK.has(actionCommand.name())){
+    return;
+  }
+  let api;
+  try {
+    api = client();
+  }
+  catch {
+    return; // not configured — the command itself reports that
+  }
+  await applyRequestedUpdate(api);
+});
 
 function client(){
   const { url, token } = resolveConnection(program.opts());
@@ -230,6 +249,42 @@ config
     const current = readConfigFile();
     writeConfigFile({ ...current, [key]: value });
     console.log(`Saved ${key} to config`);
+  });
+
+program
+  .command('check-update')
+  .description('Compare this Agent with the latest published version')
+  .action(async () => {
+    try {
+      const latest = await fetchLatestVersion(PACKAGES.agent);
+      console.log(`Installed: v${version}  Latest: v${latest}`);
+      console.log(isNewer(latest, version) ? 'Update available: thub self-update' : 'Up to date.');
+    }
+    catch (err){
+      fail(err);
+    }
+  });
+
+program
+  .command('self-update')
+  .description('Update this Agent to the latest (or a given) version with npm i -g')
+  .option('--to <x.y.z>', 'Install this version instead of the latest')
+  .action(async (opts) => {
+    try {
+      const target = opts.to || await fetchLatestVersion(PACKAGES.agent);
+      if (!isValidVersion(target)){
+        throw new Error(`Invalid version "${target}"`);
+      }
+      if (!opts.to && !isNewer(target, version)){
+        console.log(`Already on v${version}.`);
+        return;
+      }
+      console.log(`Updating v${version} -> v${target}`);
+      process.exit(installAgent(target) ? 0 : 1);
+    }
+    catch (err){
+      fail(err);
+    }
   });
 
 function collectRepeatable(value, previous){
