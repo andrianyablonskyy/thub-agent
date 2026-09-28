@@ -54,6 +54,33 @@ function client(){
   return new ApiClient({ baseUrl: url, token, userAgent: `thub-agent/${version}` });
 }
 
+// `--image`: an http(s) URL is a firmware file to download; anything else
+// is taken as a Docker image reference, which only an SW job can run. Caught
+// here so `--type hw --image alpine` explains itself instead of failing
+// the Coordinator's schema check.
+function firmwareFromImage(opts){
+  if (/^https?:\/\//i.test(opts.image)){
+    return { url: opts.image, ...(opts.sha256 ? { sha256: opts.sha256 } : {}) };
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(opts.image)){
+    throw usageError(`--image ${opts.image}: only http(s) URLs can be downloaded as firmware`);
+  }
+  if (opts.type !== 'sw'){
+    throw usageError(
+      `--image ${opts.image} looks like a Docker image, which only an SW job can run (--type sw). ` +
+        'An HW job flashes a firmware file: pass its http(s) URL.'
+    );
+  }
+  if (opts.sha256){
+    throw usageError('--sha256 applies to a firmware URL only; pin a Docker image by digest instead (image@sha256:...)');
+  }
+  return { image: opts.image };
+}
+
+function usageError(message){
+  return Object.assign(new Error(message), { status: EXIT_CODES.USAGE });
+}
+
 function fail(err){
   console.error(`Error: ${err.message}`);
   process.exit(err.status && Number.isInteger(err.status) && err.status < 100 ? err.status : EXIT_CODES.USAGE);
@@ -80,8 +107,13 @@ program
     'Free-text job owner, shown on the Client and the dashboard to tell whose job is whose ' +
       '— purely a label, not an identity. Overrides THUB_USER / config file.'
   )
-  .requiredOption('--image <url>', 'Firmware/build image URL (Artifactory or a Docker registry blob) fetched by the Client')
-  .option('--sha256 <hex>', 'Expected sha256 of --image; the Client verifies it before flashing/running')
+  .requiredOption(
+    '--image <url|docker-image>',
+    'What the DUT runs: a firmware file URL (http/https, e.g. Artifactory) the Client downloads — HW and SW jobs — ' +
+      'or, for --type sw only, a Docker image to run as the DUT (e.g. alpine, alpine:3.20, registry.lab:5000/emu:1), ' +
+      'pulled from the Client\'s registry or Docker Hub; the Client must allow it (sw.allowJobImages)'
+  )
+  .option('--sha256 <hex>', 'Expected sha256 of a firmware --image URL; the Client verifies it before flashing/running')
   .requiredOption('--tests <url>', 'Test package URL in Artifactory')
   .option('--suite <name>', 'Test suite name', 'default')
   .option('--arg <value>', 'Extra argument passed through to run-tests.sh on the Client (repeatable)', collectRepeatable, [])
@@ -105,7 +137,8 @@ program
   )
   .action(async (opts) => {
     try {
-      const c = client(),
+      const firmware = firmwareFromImage(opts),
+        c = client(),
         labels = [...(opts.board ? [`board:${opts.board}`] : []), ...opts.label],
         meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
         group = resolveGroup({ group: opts.group }),
@@ -113,7 +146,7 @@ program
 
         spec = {
           target: { type: opts.type, labels, ...(group ? { group } : {}), ...(opts.client ? { client: opts.client } : {}) },
-          firmware: { url: opts.image, ...(opts.sha256 ? { sha256: opts.sha256 } : {}) },
+          firmware,
           tests: { url: opts.tests, suite: opts.suite, args: opts.arg },
           timeoutSec: parseDurationSec(opts.timeout),
           ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
