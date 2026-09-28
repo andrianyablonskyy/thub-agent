@@ -70,6 +70,11 @@ program
       'Overrides THUB_GROUP / config file; leave unset for an unconstrained run.'
   )
   .option(
+    '--client <nameOrId>',
+    'Run on this specific Client (resource name or id) only; the job waits in that Client\'s queue ' +
+      'even if other matching resources are idle.'
+  )
+  .option(
     '--user <name>',
     'Free-text job owner, shown on the Client and the dashboard to tell whose job is whose ' +
       '— purely a label, not an identity. Overrides THUB_USER / config file.'
@@ -108,7 +113,7 @@ program
         user = resolveUser({ user: opts.user }),
 
         spec = {
-          target: { type: opts.type, labels, ...(group ? { group } : {}) },
+          target: { type: opts.type, labels, ...(group ? { group } : {}), ...(opts.client ? { client: opts.client } : {}) },
           firmware: { url: opts.image, ...(opts.sha256 ? { sha256: opts.sha256 } : {}) },
           tests: { url: opts.tests, suite: opts.suite, args: opts.arg },
           timeoutSec: parseDurationSec(opts.timeout),

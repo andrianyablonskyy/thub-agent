@@ -48,6 +48,7 @@ Key options for `thub run`:
 | `--type hw\|sw` | Required resource type. |
 | `--board <name>` / `--label <l>` | Required labels (repeatable). |
 | `--group <groupId>` | Restrict scheduling to resources that are members of this group. Falls back to `THUB_GROUP` / `thub config set group <id>`. |
+| `--client <name\|id>` | Run on this specific Client (resource name or id) only; the job waits in that Client's queue even if other matching resources are idle. |
 | `--user <name>` | Free-text job owner — a label, not an identity. Falls back to `THUB_USER` / `thub config set user <name>`. |
 | `--image <url>` | Firmware/build image URL, fetched by the Client. |
 | `--sha256 <hex>` | Expected sha256 of `--image`; the Client verifies it before flashing/running. |
