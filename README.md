@@ -57,7 +57,6 @@ Key options for `thub run`:
 | `--timeout <dur>` | e.g. `30m`, default `30m`. |
 | `--priority <n>` | 0–100; CI defaults to 50, CLI to 60 so a developer is not starved by a busy pipeline. |
 | `--meta <key=value>` | Arbitrary metadata stored on the job (repeatable) — CI job ids, git coordinates, anything else worth attaching to the run. |
-| `--source ci\|cli` | Override auto-detected job source (defaults to `ci` when `$GITHUB_ACTIONS=true`, else `cli`). |
 | `--dry-run` | Exercise the full pipeline without the Client executing anything for real. |
 | `--wait` | Do not detach on job end; exit with the job's verdict code (used in CI). |
 | `--detach` | Print the job id and exit immediately. |
