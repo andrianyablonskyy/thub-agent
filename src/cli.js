@@ -77,6 +77,34 @@ function firmwareFromImage(opts){
   return { image: opts.image };
 }
 
+// --tests (archive URL) or --tests-git (+ at most one of branch/tag/commit).
+function testsFromOptions(opts){
+  const refs = ['branch', 'tag', 'commit'].filter((k) => opts[`tests${k[0].toUpperCase()}${k.slice(1)}`]);
+  if (opts.tests && opts.testsGit){
+    throw usageError('give either --tests (an archive URL) or --tests-git (a repository), not both');
+  }
+  if (!opts.tests && !opts.testsGit){
+    throw usageError('missing test sources: --tests <archive-url> or --tests-git <repo> [--tests-branch|--tests-tag|--tests-commit]');
+  }
+  if (opts.tests){
+    if (refs.length){
+      throw usageError(`--tests-${refs[0]} only applies to --tests-git`);
+    }
+    return { url: opts.tests };
+  }
+  if (refs.length > 1){
+    throw usageError(`give at most one of --tests-branch, --tests-tag, --tests-commit (got ${refs.map((r) => `--tests-${r}`).join(', ')})`);
+  }
+  return {
+    git: {
+      url: opts.testsGit,
+      ...(opts.testsBranch ? { branch: opts.testsBranch } : {}),
+      ...(opts.testsTag ? { tag: opts.testsTag } : {}),
+      ...(opts.testsCommit ? { commit: opts.testsCommit } : {})
+    }
+  };
+}
+
 function usageError(message){
   return Object.assign(new Error(message), { status: EXIT_CODES.USAGE });
 }
@@ -114,9 +142,22 @@ program
       'pulled from the Client\'s registry or Docker Hub; the Client must allow it (sw.allowJobImages)'
   )
   .option('--sha256 <hex>', 'Expected sha256 of a firmware --image URL; the Client verifies it before flashing/running')
-  .requiredOption('--tests <url>', 'Test package URL in Artifactory')
+  .option(
+    '--tests <url>',
+    'Test sources as an archive URL (tar, tar.gz/.tgz/.bz2/.xz, or zip) the Client downloads and unpacks. ' +
+      'Give this or --tests-git'
+  )
+  .option('--tests-git <repo>', 'Test sources as a git repository (https://, ssh://, git:// or user@host:path) the Client fetches')
+  .option('--tests-branch <name>', 'With --tests-git: the branch to check out (default: the repository\'s default branch)')
+  .option('--tests-tag <name>', 'With --tests-git: the tag to check out')
+  .option('--tests-commit <sha>', 'With --tests-git: the commit to check out (7-40 hex digits)')
+  .option(
+    '--run <command>',
+    'Shell command that starts the tests, run in the test sources on the Client (--arg values arrive as "$@"). ' +
+      'Default: the sources\' own run-tests.sh. The Client must allow it (allowJobCommands)'
+  )
   .option('--suite <name>', 'Test suite name', 'default')
-  .option('--arg <value>', 'Extra argument passed through to run-tests.sh on the Client (repeatable)', collectRepeatable, [])
+  .option('--arg <value>', 'Extra argument passed through to run-tests.sh / --run on the Client (repeatable)', collectRepeatable, [])
   .option('--timeout <duration>', 'e.g. 30m, 1h', '30m')
   .option('--priority <n>', 'Priority 0-100', (v) => Number(v))
   .option('--wait', 'Do not detach on job end; exit with the verdict code (used in CI)', false)
@@ -138,6 +179,7 @@ program
   .action(async (opts) => {
     try {
       const firmware = firmwareFromImage(opts),
+        testSources = testsFromOptions(opts),
         c = client(),
         labels = [...(opts.board ? [`board:${opts.board}`] : []), ...opts.label],
         meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
@@ -147,7 +189,7 @@ program
         spec = {
           target: { type: opts.type, labels, ...(group ? { group } : {}), ...(opts.client ? { client: opts.client } : {}) },
           firmware,
-          tests: { url: opts.tests, suite: opts.suite, args: opts.arg },
+          tests: { ...testSources, ...(opts.run ? { command: opts.run } : {}), suite: opts.suite, args: opts.arg },
           timeoutSec: parseDurationSec(opts.timeout),
           ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
           ...(user ? { user } : {}),
