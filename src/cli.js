@@ -16,8 +16,9 @@
 'use strict';
 
 const { Command } = require('commander'),
-  { ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion } =
-    require('@andrian.yablonskyy/thub-common'),
+  {
+    ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime
+  } = require('@andrian.yablonskyy/thub-common'),
   { resolveConnection, resolveGroup, resolveUser, writeConfigFile, readConfigFile } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming'),
@@ -156,7 +157,7 @@ program
       }
 
       console.log(`Job ${job.id} — ${job.state}${job.resource ? ' on ' + job.resource.name : ''}`);
-      console.log(`Created: ${job.created_at}`);
+      console.log(`Created: ${formatDateTime(job.created_at)}`);
 
       if (ACTIVE_JOB_STATES.has(job.state)){
         const code = await followJob(c, jobId, { fromSeq: 0, waitMode: false });
@@ -230,7 +231,7 @@ program
         ['SOURCE', (j) => j.source],
         ['USER', (j) => j.spec.user || '-'],
         ['STATE', (j) => j.state],
-        ['CREATED', (j) => j.created_at]
+        ['CREATED', (j) => formatDateTime(j.created_at)]
       ]);
     }
     catch (err){
