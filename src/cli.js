@@ -96,7 +96,6 @@ program
     collectRepeatable,
     []
   )
-  .option('--source <ci|cli>', 'Override auto-detected job source')
   .option(
     '--dry-run',
     'Exercise the full pipeline (schedule, accept, state transitions, logs, artifact, result) ' +
@@ -106,7 +105,6 @@ program
   .action(async (opts) => {
     try {
       const c = client(),
-        source = opts.source || (process.env.GITHUB_ACTIONS === 'true' ? 'ci' : 'cli'),
         labels = [...(opts.board ? [`board:${opts.board}`] : []), ...opts.label],
         meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
         group = resolveGroup({ group: opts.group }),
@@ -117,8 +115,7 @@ program
           firmware: { url: opts.image, ...(opts.sha256 ? { sha256: opts.sha256 } : {}) },
           tests: { url: opts.tests, suite: opts.suite, args: opts.arg },
           timeoutSec: parseDurationSec(opts.timeout),
-          priority: opts.priority ?? (source === 'ci' ? 50 : 60),
-          source,
+          ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
           ...(user ? { user } : {}),
           ...(Object.keys(meta).length ? { meta } : {}),
           ...(opts.dryRun ? { dryRun: true } : {})
