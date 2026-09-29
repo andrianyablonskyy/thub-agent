@@ -52,7 +52,7 @@ Key options for `thub run`:
 | `--user <name>` | Free-text job owner — a label, not an identity. Falls back to `THUB_USER` / `thub config set user <name>`. |
 | `--command <string>` | **Required.** The task's entry point: a shell command the Client runs (`sh -c`) in the task's work directory — the `--git-repo` checkout, else an empty directory — after preparing its inputs. Its exit code is the verdict. On HW it flashes the board itself (the Client doesn't); it gets `THUB_DUT_STLINK`/`_UART`/`_USB`/`_HOST`/`_CONTAINER`, `THUB_DOWNLOAD_<n>`, `THUB_DOWNLOADS_DIR`, `THUB_GIT_COMMIT`, `THUB_SUITE`, `THUB_META_*`. |
 | `--download-file <url>` | A file the Client downloads before running the command (repeatable, `http(s)`), into the job's `downloads/` directory. |
-| `--docker-image <name>` | SW only: a Docker image the Client runs as the DUT instead of its own `sw.image` (the Client must allow it: `sw.allowJobImages`). |
+| `--docker-image <name>` | SW only: a Docker image the Client runs as the **DUT** (an emulator the tests talk to, at `$THUB_DUT_HOST` / `$THUB_DUT_CONTAINER`) instead of its own `sw.image`. The Client must allow it (`sw.allowJobImages`). It's not where `--command` runs: to run the tests in an image, see [Docker](#docker). |
 | `--git-repo <url> [<branch>\|<tag>\|<commit>]` | A git repository the Client clones (default ref: the default branch); the command runs in the checkout. |
 | `--depth <n>` | With `--git-repo`: commits to fetch, default `1`; `0` = full history. |
 | `--git-options <string>` | With `--git-repo`: extra git options placed between `git` and its subcommand on the Client, e.g. `'-c core.sshCommand="ssh -i ~/.ssh/lab_key -p 2222"'`. Shell-quoted (no shell run). Stored with the job, so reference key files rather than inlining secrets. |
@@ -68,7 +68,7 @@ Key options for `thub run`:
 | `--json` | Machine-readable output. |
 
 - `thub run` prints the **job ID**, then streams logs until Ctrl-C. Ctrl-C detaches; the job keeps running on the Client.
-- `thub status <jobId>` prints the current state; if active it keeps streaming, if done it prints the verdict and artifact download links.
+- `thub status <jobId>` prints the current state; if active it keeps streaming, if done it prints the verdict and artifact download links. `--json` prints the job once and never follows it (see [Job status and PASS/FAIL](#job-status-and-passfail)).
 
 Exit codes make the Agent usable as a CI step:
 
@@ -79,6 +79,7 @@ Exit codes make the Agent usable as a CI step:
 | `2` | `ERROR`, `TIMEOUT`, or `LOST` |
 | `3` | `CANCELED` |
 | `4` | Usage, auth or connection error |
+| `5` | `thub status <jobId> --json`: the job is still queued or running |
 | `130` | Detached with Ctrl-C (job still running) |
 
 ## Examples
@@ -93,12 +94,12 @@ thub run --type hw --board nucleo-f401re \
   --arg --junit --wait
 ```
 
-**SW task in a Docker image of your own:**
+**SW task against a DUT emulator image of your own** (the command runs on the Client host and talks to the emulator):
 
 ```bash
-thub run --type sw --docker-image alpine:3.20 \
+thub run --type sw --docker-image registry.lab.local:5000/dut-emulator:2026.08 \
   --git-repo git@github.com:yourorg/firmware-tests.git main --depth 20 \
-  --command 'make test' --wait
+  --command 'make test DUT="$THUB_DUT_HOST"' --wait
 ```
 
 **Associate a CI/CD job id with the internal job id:**
@@ -130,6 +131,88 @@ thub run --type sw --git-repo "$TESTS_REPO" --command ./ci/test.sh \
 ```bash
 thub run --type hw --board nucleo-f401re \
   --git-repo "$TESTS_REPO" --command ./ci/test.sh --user "Your Name" --wait
+```
+
+## Environment variables and secrets
+
+`--env NAME=value[,NAME=value]` (repeatable) sets variables for every command the Client runs for the job: git, the registry login, the DUT setup and `--command`. `--env NAME` alone takes the value from your own environment, so a secret stays off the command line and out of CI logs:
+
+```bash
+export API_TOKEN=…
+thub run --type sw --git-repo "$TESTS_REPO" \
+  --env TARGET=staging --env API_TOKEN \
+  --command './run-tests.sh --target "$TARGET"' --wait
+```
+
+**How the values are kept secret:**
+
+- They reach **only the Client that runs the job**.
+- The Agent API shows every value as `***`: `thub status --json`, `thub jobs --json`, even for your own job. The dashboard lists the names only.
+- The Coordinator replaces the values with `***` once the job ends.
+- A `--dry-run` masks values whose names look secret (`*PASS*`, `*TOKEN*`, `*KEY*`, …).
+
+Your command's output is the job's log, so don't print secrets. Everything else — `--command`, `--arg`, `--meta`, `--git-options` — is stored as is and visible, so never put secrets there.
+
+## Docker
+
+**Log in to a custom registry:** pass `DOCKER_REGISTRY`, `DOCKER_USERNAME` and `DOCKER_PASSWORD` with `--env`. Before anything else, the Client runs `echo "$DOCKER_PASSWORD" | docker login "$DOCKER_REGISTRY" --username "$DOCKER_USERNAME" --password-stdin` into a Docker config of the job's own. The job's commands get it as `DOCKER_CONFIG`, and it's deleted with the job.
+
+**Pull an image from it as the DUT:**
+
+```bash
+export DOCKER_PASSWORD=…
+thub run --type sw \
+  --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USERNAME=ci --env DOCKER_PASSWORD \
+  --docker-image registry.lab.local:5000/dut-emulator:2026.08 \
+  --git-repo "$TESTS_REPO" --command './ci/test.sh --dut "$THUB_DUT_HOST"' --wait
+```
+
+**Run the command inside a container:** `--command` starts on the Client host in the work directory (`$THUB_WORK_DIR`, the `--git-repo` checkout). Start the container from it, mounting that directory:
+
+```bash
+thub run --type sw \
+  --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USERNAME=ci --env DOCKER_PASSWORD \
+  --git-repo git@bitbucket.org:yourorg/web-ui-tests.git main \
+  --git-options '-c core.sshCommand="ssh -i /home/thub/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new"' \
+  --command 'docker run --rm -v "$THUB_WORK_DIR:/work" -w /work "$DOCKER_REGISTRY/python:3.14" ./run-tests.sh' \
+  --wait
+```
+
+**Clone the repository inside the image, with parameters from `--env`:**
+
+```bash
+thub run --type sw \
+  --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USERNAME=ci --env DOCKER_PASSWORD \
+  --env TEST_IMAGE=registry.lab.local:5000/team/test-runner:1.4 \
+  --env REPO_URL=git@bitbucket.org:yourorg/web-ui-tests.git,REPO_REF=main \
+  --env 'GIT_SSH_COMMAND=ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new' \
+  --command 'docker run --rm -e REPO_URL -e REPO_REF -e GIT_SSH_COMMAND \
+               -v "$HOME/.ssh:/root/.ssh:ro" -v "$THUB_WORK_DIR/results:/results" \
+               "$TEST_IMAGE" sh -c "git clone --depth 1 --branch \"\$REPO_REF\" \"\$REPO_URL\" /src && cd /src && ./run-tests.sh --junit /results"' \
+  --wait
+```
+
+The Client host needs Docker and the Client's user in the `docker` group; SW Clients have both. Add `--dry-run` to see every command a job would run on the Client (secret-looking values masked) without running any. More in the main README, §7.2.
+
+## Job status and PASS/FAIL
+
+The verdict is `--command`'s exit code: `0` → **PASSED**, anything else → **FAILED**. ERROR, TIMEOUT, LOST and CANCELED mean the job didn't run to a verdict. JUnit XML written to `results/` or `artifacts/` in the work directory is uploaded and summed into the job's `summary`.
+
+**In CI:** `thub run … --wait` exits with the verdict code (table above): `0` PASSED, `1` FAILED, `2` infrastructure, `3` canceled.
+
+**Check a job:**
+
+```bash
+thub status M-00125          # state; follows the log while active; then "Verdict: …" and artifact links; exit = verdict
+thub jobs --mine --state FAILED
+```
+
+**From a script:** `thub status <jobId> --json` prints the job once, with `state`, `exit_code`, `summary`, `message` and `resource.name`. It exits with the verdict code, or `5` while the job is still queued or running:
+
+```bash
+JOB=$(thub run --type sw --git-repo "$TESTS_REPO" --command ./ci/test.sh --detach --json | jq -r .jobId)
+while thub status "$JOB" --json > job.json; [ $? -eq 5 ]; do sleep 10; done
+jq -r '"\(.state) exit=\(.exit_code) failed=\(.summary.failed // 0)"' job.json   # PASSED exit=0 failed=0
 ```
 
 ## GitHub Actions
