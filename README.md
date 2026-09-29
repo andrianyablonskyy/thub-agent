@@ -55,6 +55,7 @@ Key options for `thub run`:
 | `--docker-image <name>` | SW only: a Docker image the Client runs as the DUT instead of its own `sw.image` (the Client must allow it: `sw.allowJobImages`). |
 | `--git-repo <url> [<branch>\|<tag>\|<commit>]` | A git repository the Client clones (default ref: the default branch); the command runs in the checkout. |
 | `--depth <n>` | With `--git-repo`: commits to fetch, default `1`; `0` = full history. |
+| `--git-options <string>` | With `--git-repo`: extra git options placed between `git` and its subcommand on the Client, e.g. `'-c core.sshCommand="ssh -i ~/.ssh/lab_key -p 2222"'`. Shell-quoted (no shell run). Stored with the job, so reference key files rather than inlining secrets. |
 | `--suite <name>` | Passed to the command as `THUB_SUITE`. |
 | `--arg <value>` | Extra argument for the command, as `"$@"` (repeatable). |
 | `--timeout <dur>` | e.g. `30m`, default `30m`. |
