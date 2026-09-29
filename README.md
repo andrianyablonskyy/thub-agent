@@ -9,7 +9,7 @@ See the [main TestHub repo](https://github.com/andrianyablonskyy/thub) for the f
 ```bash
 npm i -g @andrian.yablonskyy/thub-agent
 # or, one-off in CI:
-npx -y @andrian.yablonskyy/thub-agent run --type sw --image "$IMAGE_URL" --tests "$TESTS_URL" --wait
+npx -y @andrian.yablonskyy/thub-agent run --type sw --download-file "$IMAGE_URL" --git-repo "$TESTS_REPO" --command ./ci/test.sh --wait
 ```
 
 ## Configuration
@@ -50,10 +50,13 @@ Key options for `thub run`:
 | `--group <groupId>` | Restrict scheduling to resources that are members of this group. Falls back to `THUB_GROUP` / `thub config set group <id>`. |
 | `--client <name\|id>` | Run on this specific Client (resource name or id) only; the job waits in that Client's queue even if other matching resources are idle. |
 | `--user <name>` | Free-text job owner — a label, not an identity. Falls back to `THUB_USER` / `thub config set user <name>`. |
-| `--image <url>` | Firmware/build image URL, fetched by the Client. |
-| `--sha256 <hex>` | Expected sha256 of `--image`; the Client verifies it before flashing/running. |
-| `--tests <url>` / `--suite <name>` | Test package and suite. |
-| `--arg <value>` | Extra argument passed through to `run-tests.sh` on the Client (repeatable). |
+| `--command <string>` | **Required.** The task's entry point: a shell command the Client runs (`sh -c`) in the task's work directory — the `--git-repo` checkout, else an empty directory — after preparing its inputs. Its exit code is the verdict. On HW it flashes the board itself (the Client doesn't); it gets `THUB_DUT_STLINK`/`_UART`/`_USB`/`_HOST`/`_CONTAINER`, `THUB_DOWNLOAD_<n>`, `THUB_DOWNLOADS_DIR`, `THUB_GIT_COMMIT`, `THUB_SUITE`, `THUB_META_*`. |
+| `--download-file <url>` | A file the Client downloads before running the command (repeatable, `http(s)`), into the job's `downloads/` directory. |
+| `--docker-image <name>` | SW only: a Docker image the Client runs as the DUT instead of its own `sw.image` (the Client must allow it: `sw.allowJobImages`). |
+| `--git-repo <url> [<branch>\|<tag>\|<commit>]` | A git repository the Client clones (default ref: the default branch); the command runs in the checkout. |
+| `--depth <n>` | With `--git-repo`: commits to fetch, default `1`; `0` = full history. |
+| `--suite <name>` | Passed to the command as `THUB_SUITE`. |
+| `--arg <value>` | Extra argument for the command, as `"$@"` (repeatable). |
 | `--timeout <dur>` | e.g. `30m`, default `30m`. |
 | `--priority <n>` | 0–100; CI defaults to 50, CLI to 60 so a developer is not starved by a busy pipeline. |
 | `--meta <key=value>` | Arbitrary metadata stored on the job (repeatable) — CI job ids, git coordinates, anything else worth attaching to the run. |
@@ -78,34 +81,45 @@ Exit codes make the Agent usable as a CI step:
 
 ## Examples
 
+**Run a task** — download the firmware, check out the tests at a tag, flash and test (HW):
+
+```bash
+thub run --type hw --board nucleo-f401re \
+  --download-file "$IMAGE_URL" \
+  --git-repo https://github.com/yourorg/firmware-tests.git v1.4.0 \
+  --command 'st-flash --serial "$THUB_DUT_STLINK" --reset write "$THUB_DOWNLOAD_1" 0x08000000 && ./ci/test.sh "$@"' \
+  --arg --junit --wait
+```
+
+**SW task in a Docker image of your own:**
+
+```bash
+thub run --type sw --docker-image alpine:3.20 \
+  --git-repo git@github.com:yourorg/firmware-tests.git main --depth 20 \
+  --command 'make test' --wait
+```
+
 **Associate a CI/CD job id with the internal job id:**
 
 ```bash
-thub run --type sw --image "$IMAGE_URL" --tests "$TESTS_URL" \
+thub run --type sw --download-file "$IMAGE_URL" --git-repo "$TESTS_REPO" --command ./ci/test.sh \
   --meta ciJobId="$GITHUB_RUN_ID" --wait
 thub status A-00123 --json | jq '.spec.meta.ciJobId'
 ```
 
-**Pass Git repo/branch/hash/tag to the Client** — these travel as `--meta key=value` and the Client exposes each one to `run-tests.sh` as `THUB_META_<KEY>` (`ciJobId` → `THUB_META_CI_JOB_ID`):
+**Pass extra metadata** — `--meta key=value` reaches the command as `THUB_META_<KEY>` (`ciJobId` → `THUB_META_CI_JOB_ID`).
+
+**Dry-run the pipeline** — proves the Coordinator↔Client plumbing works without real hardware, a real emulator image, or reachable downloads:
 
 ```bash
-thub run --type hw --board nucleo-f401re \
-  --image "$IMAGE_URL" --tests "$TESTS_URL" --suite smoke \
-  --meta repo=yourorg/firmware --meta branch=main --meta sha=a1b2c3d --wait
-```
-
-**Dry-run the pipeline** — proves the Coordinator↔Client plumbing works without real hardware, a real emulator image, or a reachable Artifactory:
-
-```bash
-thub run --type sw --image https://does-not-exist.invalid/app.bin \
-  --tests https://does-not-exist.invalid/tests.tar.gz --suite smoke \
-  --dry-run --wait
+thub run --type sw --download-file https://does-not-exist.invalid/app.bin \
+  --command ./ci/test.sh --dry-run --wait
 ```
 
 **Run on a specific resource group only:**
 
 ```bash
-thub run --type sw --image "$IMAGE_URL" --tests "$TESTS_URL" \
+thub run --type sw --git-repo "$TESTS_REPO" --command ./ci/test.sh \
   --group 548ae4ae-ac5b-401f-acaa-24bbe790e62d --wait
 ```
 
@@ -113,7 +127,7 @@ thub run --type sw --image "$IMAGE_URL" --tests "$TESTS_URL" \
 
 ```bash
 thub run --type hw --board nucleo-f401re \
-  --image "$IMAGE_URL" --tests "$TESTS_URL" --user "Your Name" --wait
+  --git-repo "$TESTS_REPO" --command ./ci/test.sh --user "Your Name" --wait
 ```
 
 ## GitHub Actions
@@ -128,8 +142,9 @@ test-sw:
   steps:
     - run: |
         npx -y @andrian.yablonskyy/thub-agent run --type sw \
-          --image "${{ needs.build.outputs.image_url }}" \
-          --tests "${{ needs.build.outputs.tests_url }}" --suite full --wait
+          --download-file "${{ needs.build.outputs.image_url }}" \
+          --git-repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$GITHUB_SHA" \
+          --command ./ci/sw-tests.sh --suite full --wait
 ```
 
 If the GitHub job is canceled, the runner sends `SIGINT` to the Agent. In `--wait` mode (CI), that's treated as a cancel request (`POST /jobs/:id/cancel`) before exiting, so abandoned CI jobs don't hold hardware. In interactive mode, Ctrl-C only detaches.

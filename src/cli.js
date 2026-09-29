@@ -54,55 +54,40 @@ function client(){
   return new ApiClient({ baseUrl: url, token, userAgent: `thub-agent/${version}` });
 }
 
-// `--image`: an http(s) URL is a firmware file to download; anything else
-// is taken as a Docker image reference, which only an SW job can run. Caught
-// here so `--type hw --image alpine` explains itself instead of failing
-// the Coordinator's schema check.
-function firmwareFromImage(opts){
-  if (/^https?:\/\//i.test(opts.image)){
-    return { url: opts.image, ...(opts.sha256 ? { sha256: opts.sha256 } : {}) };
-  }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(opts.image)){
-    throw usageError(`--image ${opts.image}: only http(s) URLs can be downloaded as firmware`);
-  }
-  if (opts.type !== 'sw'){
-    throw usageError(
-      `--image ${opts.image} looks like a Docker image, which only an SW job can run (--type sw). ` +
-        'An HW job flashes a firmware file: pass its http(s) URL.'
-    );
-  }
-  if (opts.sha256){
-    throw usageError('--sha256 applies to a firmware URL only; pin a Docker image by digest instead (image@sha256:...)');
-  }
-  return { image: opts.image };
-}
+// --command (mandatory), --download-file (repeatable), --docker-image (SW
+// only) and --git-repo <url> [ref] --depth <n> -> the job spec's task fields.
+// Checked here too, so mistakes explain themselves before anything is sent.
+function taskFromOptions(opts){
+  const downloads = opts.downloadFile.map((url) => {
+      if (!/^https?:\/\//i.test(url)){
+        throw usageError(`--download-file ${url}: must be an http(s) URL`);
+      }
+      return { url };
+    }),
+    task = { command: opts.command, args: opts.arg, suite: opts.suite, ...(downloads.length ? { downloads } : {}) };
 
-// --tests (archive URL) or --tests-git (+ at most one of branch/tag/commit).
-function testsFromOptions(opts){
-  const refs = ['branch', 'tag', 'commit'].filter((k) => opts[`tests${k[0].toUpperCase()}${k.slice(1)}`]);
-  if (opts.tests && opts.testsGit){
-    throw usageError('give either --tests (an archive URL) or --tests-git (a repository), not both');
-  }
-  if (!opts.tests && !opts.testsGit){
-    throw usageError('missing test sources: --tests <archive-url> or --tests-git <repo> [--tests-branch|--tests-tag|--tests-commit]');
-  }
-  if (opts.tests){
-    if (refs.length){
-      throw usageError(`--tests-${refs[0]} only applies to --tests-git`);
+  if (opts.dockerImage){
+    if (opts.type !== 'sw'){
+      throw usageError('--docker-image only works for SW jobs (--type sw): an HW job runs on the physical board');
     }
-    return { url: opts.tests };
+    task.image = opts.dockerImage;
   }
-  if (refs.length > 1){
-    throw usageError(`give at most one of --tests-branch, --tests-tag, --tests-commit (got ${refs.map((r) => `--tests-${r}`).join(', ')})`);
+
+  if (opts.depth !== undefined && !opts.gitRepo){
+    throw usageError('--depth only applies to --git-repo');
   }
-  return {
-    git: {
-      url: opts.testsGit,
-      ...(opts.testsBranch ? { branch: opts.testsBranch } : {}),
-      ...(opts.testsTag ? { tag: opts.testsTag } : {}),
-      ...(opts.testsCommit ? { commit: opts.testsCommit } : {})
+  if (opts.gitRepo){
+    const [url, ref, ...extra] = opts.gitRepo;
+    if (extra.length){
+      throw usageError(`--git-repo takes a URL and at most one branch, tag or commit (got: ${opts.gitRepo.join(' ')})`);
     }
-  };
+    const depth = opts.depth === undefined ? 1 : Number(opts.depth);
+    if (!Number.isInteger(depth) || depth < 0){
+      throw usageError(`--depth ${opts.depth}: must be a whole number (0 = full history)`);
+    }
+    task.git = { url, ...(ref ? { ref } : {}), depth };
+  }
+  return task;
 }
 
 function usageError(message){
@@ -136,28 +121,30 @@ program
       '— purely a label, not an identity. Overrides THUB_USER / config file.'
   )
   .requiredOption(
-    '--image <url|docker-image>',
-    'What the DUT runs: a firmware file URL (http/https, e.g. Artifactory) the Client downloads — HW and SW jobs — ' +
-      'or, for --type sw only, a Docker image to run as the DUT (e.g. alpine, alpine:3.20, registry.lab:5000/emu:1), ' +
-      'pulled from the Client\'s registry or Docker Hub; the Client must allow it (sw.allowJobImages)'
+    '--command <string>',
+    'The task\'s entry point: a shell command the Client runs (sh -c) in the task\'s work directory — the --git-repo ' +
+      'checkout if given — after downloading --download-file files. --arg values arrive as "$@"'
   )
-  .option('--sha256 <hex>', 'Expected sha256 of a firmware --image URL; the Client verifies it before flashing/running')
   .option(
-    '--tests <url>',
-    'Test sources as an archive URL (tar, tar.gz/.tgz/.bz2/.xz, or zip) the Client downloads and unpacks. ' +
-      'Give this or --tests-git'
+    '--download-file <url>',
+    'A file the Client downloads into the work directory before running --command (repeatable; http/https). ' +
+      'Paths are passed as THUB_DOWNLOAD_1.. / THUB_DOWNLOADS_DIR',
+    collectRepeatable,
+    []
   )
-  .option('--tests-git <repo>', 'Test sources as a git repository (https://, ssh://, git:// or user@host:path) the Client fetches')
-  .option('--tests-branch <name>', 'With --tests-git: the branch to check out (default: the repository\'s default branch)')
-  .option('--tests-tag <name>', 'With --tests-git: the tag to check out')
-  .option('--tests-commit <sha>', 'With --tests-git: the commit to check out (7-40 hex digits)')
   .option(
-    '--run <command>',
-    'Shell command that starts the tests, run in the test sources on the Client (--arg values arrive as "$@"). ' +
-      'Default: the sources\' own run-tests.sh. The Client must allow it (allowJobCommands)'
+    '--docker-image <name>',
+    'SW jobs only: a Docker image the Client runs as the DUT (e.g. alpine, alpine:3.20, registry.lab:5000/emu:1), ' +
+      'instead of its own sw.image; pulled from its registry or Docker Hub. The Client must allow it (sw.allowJobImages)'
   )
-  .option('--suite <name>', 'Test suite name', 'default')
-  .option('--arg <value>', 'Extra argument passed through to run-tests.sh / --run on the Client (repeatable)', collectRepeatable, [])
+  .option(
+    '--git-repo <url...>',
+    'A git repository the Client clones before running --command, then runs it there: <url> [<branch>|<tag>|<commit>] ' +
+      '(https://, ssh://, git:// or user@host:path; default ref: the default branch)'
+  )
+  .option('--depth <n>', 'With --git-repo: how many commits to fetch (default 1; 0 = full history)')
+  .option('--suite <name>', 'Test suite name, passed to --command as THUB_SUITE', 'default')
+  .option('--arg <value>', 'Extra argument for --command, as "$@" (repeatable)', collectRepeatable, [])
   .option('--timeout <duration>', 'e.g. 30m, 1h', '30m')
   .option('--priority <n>', 'Priority 0-100', (v) => Number(v))
   .option('--wait', 'Do not detach on job end; exit with the verdict code (used in CI)', false)
@@ -178,8 +165,7 @@ program
   )
   .action(async (opts) => {
     try {
-      const firmware = firmwareFromImage(opts),
-        testSources = testsFromOptions(opts),
+      const task = taskFromOptions(opts),
         c = client(),
         labels = [...(opts.board ? [`board:${opts.board}`] : []), ...opts.label],
         meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
@@ -188,8 +174,7 @@ program
 
         spec = {
           target: { type: opts.type, labels, ...(group ? { group } : {}), ...(opts.client ? { client: opts.client } : {}) },
-          firmware,
-          tests: { ...testSources, ...(opts.run ? { command: opts.run } : {}), suite: opts.suite, args: opts.arg },
+          ...task,
           timeoutSec: parseDurationSec(opts.timeout),
           ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
           ...(user ? { user } : {}),
