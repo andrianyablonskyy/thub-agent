@@ -56,7 +56,7 @@ Key options for `thub run`:
 | `--git-repo <url> [<branch>\|<tag>\|<commit>]` | A git repository the Client clones (default ref: the default branch); the command runs in the checkout. |
 | `--depth <n>` | With `--git-repo`: commits to fetch, default `1`; `0` = full history. |
 | `--git-options <string>` | With `--git-repo`: extra git options placed between `git` and its subcommand on the Client, e.g. `'-c core.sshCommand="ssh -i ~/.ssh/lab_key -p 2222"'`. Shell-quoted (no shell run). Stored with the job, so reference key files rather than inlining secrets. |
-| `--env <vars>` | Environment variables for every command the Client runs for the job (git, docker login, `--command`): `NAME=value[,NAME=value]`, repeatable; `--env NAME` alone takes the value from your shell. `DOCKER_REGISTRY` + `DOCKER_USERNAME` + `DOCKER_PASSWORD`: the Client logs in to that registry first (`docker login … --password-stdin`). Values reach only the Client running the job; the Coordinator masks them and drops them when the job ends. |
+| `--env <vars>` | Environment variables for every command the Client runs for the job (git and `--command`): `NAME=value[,NAME=value]`, repeatable; `--env NAME` alone takes the value from your shell. Any names — none means anything to the Agent or the Client (only `THUB_*`, `GIT_TERMINAL_PROMPT`, `GIT_ALLOW_PROTOCOL` are refused). Every value is a secret: it reaches only the Client running the job; the Coordinator masks it and drops it when the job ends. |
 | `--suite <name>` | Passed to the command as `THUB_SUITE`. |
 | `--arg <value>` | Extra argument for the command, as `"$@"` (repeatable). |
 | `--timeout <dur>` | e.g. `30m`, default `30m`. |
@@ -135,7 +135,7 @@ thub run --type hw --board nucleo-f401re \
 
 ## Environment variables and secrets
 
-`--env NAME=value[,NAME=value]` (repeatable) sets variables for every command the Client runs for the job: git, the registry login, the DUT setup and `--command`. `--env NAME` alone takes the value from your own environment, so a secret stays off the command line and out of CI logs:
+`--env NAME=value[,NAME=value]` (repeatable) sets variables for every command the Client runs for the job: git and `--command`. The names are yours; none means anything to the Agent or the Client. `--env NAME` alone takes the value from your own environment, so a secret stays off the command line and out of CI logs:
 
 ```bash
 export API_TOKEN=…
@@ -149,21 +149,28 @@ thub run --type sw --git-repo "$TESTS_REPO" \
 - They reach **only the Client that runs the job**.
 - The Agent API shows every value as `***`: `thub status --json`, `thub jobs --json`, even for your own job. The dashboard lists the names only.
 - The Coordinator replaces the values with `***` once the job ends.
-- A `--dry-run` masks values whose names look secret (`*PASS*`, `*TOKEN*`, `*KEY*`, …).
+- A `--dry-run` shows every value as `***`, whatever its name.
 
 Your command's output is the job's log, so don't print secrets. Everything else — `--command`, `--arg`, `--meta`, `--git-options` — is stored as is and visible, so never put secrets there.
 
 ## Docker
 
-**Log in to a custom registry:** pass `DOCKER_REGISTRY`, `DOCKER_USERNAME` and `DOCKER_PASSWORD` with `--env`. Before anything else, the Client runs `echo "$DOCKER_PASSWORD" | docker login "$DOCKER_REGISTRY" --username "$DOCKER_USERNAME" --password-stdin` into a Docker config of the job's own. The job's commands get it as `DOCKER_CONFIG`, and it's deleted with the job.
-
-**Pull an image from it as the DUT:**
+**Log in to a custom registry:** in `--command`, with credentials passed as `--env` under any names. Point `DOCKER_CONFIG` at the job's work directory first, so the login is deleted with the job rather than left in the Client user's `~/.docker` for later jobs:
 
 ```bash
 export DOCKER_PASSWORD=…
-thub run --type sw \
-  --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USERNAME=ci --env DOCKER_PASSWORD \
-  --docker-image registry.lab.local:5000/dut-emulator:2026.08 \
+thub run --type hw \
+  --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USER=ci --env DOCKER_PASSWORD \
+  --command 'export DOCKER_CONFIG="$THUB_WORK_DIR/.docker" &&
+             echo "$DOCKER_PASSWORD" | docker login "$DOCKER_REGISTRY" --username "$DOCKER_USER" --password-stdin &&
+             docker pull "$DOCKER_REGISTRY/team/test-runner:1.4"' \
+  --wait
+```
+
+**Pull an image as the DUT:** `--docker-image` is pulled by the Client before the command runs, as its service user. For a private registry, log in once on the Client host as that user: `sudo -u thub docker login registry.lab.local:5000`.
+
+```bash
+thub run --type sw --docker-image registry.lab.local:5000/dut-emulator:2026.08 \
   --git-repo "$TESTS_REPO" --command './ci/test.sh --dut "$THUB_DUT_HOST"' --wait
 ```
 
@@ -171,10 +178,12 @@ thub run --type sw \
 
 ```bash
 thub run --type sw \
-  --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USERNAME=ci --env DOCKER_PASSWORD \
+  --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USER=ci --env DOCKER_PASSWORD \
   --git-repo git@bitbucket.org:yourorg/web-ui-tests.git main \
   --git-options '-c core.sshCommand="ssh -i /home/thub/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new"' \
-  --command 'docker run --rm -v "$THUB_WORK_DIR:/work" -w /work "$DOCKER_REGISTRY/python:3.14" ./run-tests.sh' \
+  --command 'export DOCKER_CONFIG="$THUB_WORK_DIR/.docker" &&
+             echo "$DOCKER_PASSWORD" | docker login "$DOCKER_REGISTRY" --username "$DOCKER_USER" --password-stdin &&
+             docker run --rm -v "$THUB_WORK_DIR:/work" -w /work "$DOCKER_REGISTRY/python:3.14" ./run-tests.sh' \
   --wait
 ```
 
@@ -182,17 +191,19 @@ thub run --type sw \
 
 ```bash
 thub run --type sw \
-  --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USERNAME=ci --env DOCKER_PASSWORD \
+  --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USER=ci --env DOCKER_PASSWORD \
   --env TEST_IMAGE=registry.lab.local:5000/team/test-runner:1.4 \
   --env REPO_URL=git@bitbucket.org:yourorg/web-ui-tests.git,REPO_REF=main \
   --env 'GIT_SSH_COMMAND=ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new' \
-  --command 'docker run --rm -e REPO_URL -e REPO_REF -e GIT_SSH_COMMAND \
+  --command 'export DOCKER_CONFIG="$THUB_WORK_DIR/.docker" &&
+             echo "$DOCKER_PASSWORD" | docker login "$DOCKER_REGISTRY" --username "$DOCKER_USER" --password-stdin &&
+             docker run --rm -e REPO_URL -e REPO_REF -e GIT_SSH_COMMAND \
                -v "$HOME/.ssh:/root/.ssh:ro" -v "$THUB_WORK_DIR/results:/results" \
                "$TEST_IMAGE" sh -c "git clone --depth 1 --branch \"\$REPO_REF\" \"\$REPO_URL\" /src && cd /src && ./run-tests.sh --junit /results"' \
   --wait
 ```
 
-The Client host needs Docker and the Client's user in the `docker` group; SW Clients have both. Add `--dry-run` to see every command a job would run on the Client (secret-looking values masked) without running any. More in the main README, §7.2.
+The Client host needs Docker and the Client's user in the `docker` group; SW Clients have both. Add `--dry-run` to see every command a job would run on the Client (every `--env` value shown as `***`) without running any. More in the main README, §7.2.
 
 ## Job status and PASS/FAIL
 

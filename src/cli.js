@@ -184,9 +184,9 @@ program
   )
   .option(
     '--env <vars>',
-    'Environment variables for every command the Client runs for the job (git, docker login, --command): ' +
+    'Environment variables for every command the Client runs for the job (git, --command): ' +
       'NAME=value[,NAME=value] (repeatable; a value may contain commas); --env NAME alone takes its value from this shell. ' +
-      'With DOCKER_REGISTRY, DOCKER_USERNAME and DOCKER_PASSWORD the Client first logs in to that registry. ' +
+      'Any names (except THUB_*, GIT_TERMINAL_PROMPT, GIT_ALLOW_PROTOCOL). ' +
       'Values reach only the Client running the job; the Coordinator masks them and drops them when the job ends',
     collectRepeatable,
     []
