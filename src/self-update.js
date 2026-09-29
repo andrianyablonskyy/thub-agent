@@ -28,12 +28,12 @@ const NPM_STDIO = ['inherit', 2, 2],
 // for a system-wide install. Never throws — returns whether it worked.
 function installAgent(target){
   try {
-    if (npmInstallGlobal(PACKAGES.agent, target, { stdio: NPM_STDIO }) === 0){
+    if (npmInstallGlobal(PACKAGES.agent, target, { stdio: NPM_STDIO, retryDelaysSec: [] }) === 0){
       return true;
     }
     if (process.getuid?.() !== 0 && process.stdin.isTTY){
       console.error('thub: retrying with sudo');
-      return spawnSync('sudo', [npmBin(), 'i', '-g', `${PACKAGES.agent}@${target}`], { stdio: NPM_STDIO }).status === 0;
+      return spawnSync('sudo', [npmBin(), 'i', '-g', '--prefer-online', `${PACKAGES.agent}@${target}`], { stdio: NPM_STDIO }).status === 0;
     }
   }
   catch (err){
