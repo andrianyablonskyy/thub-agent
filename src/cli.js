@@ -108,6 +108,17 @@ function usageError(message){
 
 function fail(err){
   console.error(`Error: ${err.message}`);
+  // The Coordinator validates the spec with its own thub-common: an unknown
+  // field means it's older than this Agent.
+  if (/Invalid job spec.*must NOT have additional properties/.test(err.message)){
+    let url = 'the configured URL';
+    try {
+      ({ url } = resolveConnection(program.opts()));
+    }
+    catch { /* keep the generic wording */ }
+    console.error(`Hint: the Coordinator at ${url} doesn't know an option ` +
+      `this Agent (v${version}) sent — update the Coordinator (dashboard → Update app, or npm i -g @andrian.yablonskyy/thub-coordinator@latest).`);
+  }
   process.exit(err.status && Number.isInteger(err.status) && err.status < 100 ? err.status : EXIT_CODES.USAGE);
 }
 
