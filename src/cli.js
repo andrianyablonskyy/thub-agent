@@ -17,7 +17,8 @@
 
 const { Command } = require('commander'),
   {
-    ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime
+    ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime,
+    splitArgs
   } = require('@andrian.yablonskyy/thub-common'),
   { resolveConnection, resolveGroup, resolveUser, writeConfigFile, readConfigFile } = require('./config'),
   { parseDurationSec } = require('./duration'),
@@ -76,6 +77,17 @@ function taskFromOptions(opts){
   if (opts.depth !== undefined && !opts.gitRepo){
     throw usageError('--depth only applies to --git-repo');
   }
+  if (opts.gitOptions !== undefined && !opts.gitRepo){
+    throw usageError('--git-options only applies to --git-repo');
+  }
+  if (opts.gitOptions){
+    try {
+      splitArgs(opts.gitOptions);
+    }
+    catch (err){
+      throw usageError(`--git-options: ${err.message}`);
+    }
+  }
   if (opts.gitRepo){
     const [url, ref, ...extra] = opts.gitRepo;
     if (extra.length){
@@ -85,7 +97,7 @@ function taskFromOptions(opts){
     if (!Number.isInteger(depth) || depth < 0){
       throw usageError(`--depth ${opts.depth}: must be a whole number (0 = full history)`);
     }
-    task.git = { url, ...(ref ? { ref } : {}), depth };
+    task.git = { url, ...(ref ? { ref } : {}), depth, ...(opts.gitOptions ? { options: opts.gitOptions } : {}) };
   }
   return task;
 }
@@ -143,6 +155,11 @@ program
       '(https://, ssh://, git:// or user@host:path; default ref: the default branch)'
   )
   .option('--depth <n>', 'With --git-repo: how many commits to fetch (default 1; 0 = full history)')
+  .option(
+    '--git-options <string>',
+    'With --git-repo: extra git options, placed between `git` and its subcommand on the Client (shell-quoted, no shell run), ' +
+      'e.g. \'-c core.sshCommand="ssh -i ~/.ssh/lab_key -p 2222"\'. Stored with the job — reference key files, don\'t inline secrets'
+  )
   .option('--suite <name>', 'Test suite name, passed to --command as THUB_SUITE', 'default')
   .option('--arg <value>', 'Extra argument for --command, as "$@" (repeatable)', collectRepeatable, [])
   .option('--timeout <duration>', 'e.g. 30m, 1h', '30m')
