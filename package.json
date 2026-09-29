@@ -12,7 +12,7 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
-    "@andrian.yablonskyy/thub-common": "^1.0.27",
+    "@andrian.yablonskyy/thub-common": "^1.0.28",
     "commander": "^13.1.0"
   },
   "devDependencies": {
