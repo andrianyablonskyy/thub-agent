@@ -56,6 +56,7 @@ Key options for `thub run`:
 | `--git-repo <url> [<branch>\|<tag>\|<commit>]` | A git repository the Client clones (default ref: the default branch); the command runs in the checkout. |
 | `--depth <n>` | With `--git-repo`: commits to fetch, default `1`; `0` = full history. |
 | `--git-options <string>` | With `--git-repo`: extra git options placed between `git` and its subcommand on the Client, e.g. `'-c core.sshCommand="ssh -i ~/.ssh/lab_key -p 2222"'`. Shell-quoted (no shell run). Stored with the job, so reference key files rather than inlining secrets. |
+| `--env <vars>` | Environment variables for every command the Client runs for the job (git, docker login, `--command`): `NAME=value[,NAME=value]`, repeatable; `--env NAME` alone takes the value from your shell. `DOCKER_REGISTRY` + `DOCKER_USERNAME` + `DOCKER_PASSWORD`: the Client logs in to that registry first (`docker login … --password-stdin`). Values reach only the Client running the job; the Coordinator masks them and drops them when the job ends. |
 | `--suite <name>` | Passed to the command as `THUB_SUITE`. |
 | `--arg <value>` | Extra argument for the command, as `"$@"` (repeatable). |
 | `--timeout <dur>` | e.g. `30m`, default `30m`. |

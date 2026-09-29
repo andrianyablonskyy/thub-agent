@@ -18,7 +18,8 @@
 const { Command } = require('commander'),
   {
     ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime,
-    splitArgs
+    splitArgs,
+    parseEnvList
   } = require('@andrian.yablonskyy/thub-common'),
   { resolveConnection, resolveGroup, resolveUser, writeConfigFile, readConfigFile } = require('./config'),
   { parseDurationSec } = require('./duration'),
@@ -99,6 +100,16 @@ function taskFromOptions(opts){
     }
     task.git = { url, ...(ref ? { ref } : {}), depth, ...(opts.gitOptions ? { options: opts.gitOptions } : {}) };
   }
+  let env;
+  try {
+    env = parseEnvList(opts.env);
+  }
+  catch (err){
+    throw usageError(err.message);
+  }
+  if (Object.keys(env).length){
+    task.env = env;
+  }
   return task;
 }
 
@@ -170,6 +181,15 @@ program
     '--git-options <string>',
     'With --git-repo: extra git options, placed between `git` and its subcommand on the Client (shell-quoted, no shell run), ' +
       'e.g. \'-c core.sshCommand="ssh -i ~/.ssh/lab_key -p 2222"\'. Stored with the job — reference key files, don\'t inline secrets'
+  )
+  .option(
+    '--env <vars>',
+    'Environment variables for every command the Client runs for the job (git, docker login, --command): ' +
+      'NAME=value[,NAME=value] (repeatable; a value may contain commas); --env NAME alone takes its value from this shell. ' +
+      'With DOCKER_REGISTRY, DOCKER_USERNAME and DOCKER_PASSWORD the Client first logs in to that registry. ' +
+      'Values reach only the Client running the job; the Coordinator masks them and drops them when the job ends',
+    collectRepeatable,
+    []
   )
   .option('--suite <name>', 'Test suite name, passed to --command as THUB_SUITE', 'default')
   .option('--arg <value>', 'Extra argument for --command, as "$@" (repeatable)', collectRepeatable, [])

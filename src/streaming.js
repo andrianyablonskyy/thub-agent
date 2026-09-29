@@ -77,6 +77,9 @@ async function followJob(client, jobId, { fromSeq = 0, waitMode = false, print =
             else if (event === 'state'){
               print(`-- ${data.state}${data.resource ? ' on ' + data.resource : ''} --`);
             }
+            else if (event === 'waiting'){
+              print(`-- waiting: ${data.reason} --`);
+            }
             else if (event === 'end'){
               print(`\nJob finished: ${data.state}`);
               if (data.artifactsUrl){
