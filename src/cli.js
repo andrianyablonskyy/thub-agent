@@ -254,14 +254,16 @@ program
   .command('status')
   .description('Show status; follow log if running, show artifacts if done')
   .argument('<jobId>')
-  .option('--json', 'Machine-readable output', false)
+  .option('--json', 'Print the job as JSON once, without following it; exit code: its verdict, or 5 while it\'s still active', false)
   .action(async (jobId, opts) => {
     try {
       const c = client(),
         job = await c.get(`/jobs/${jobId}`);
-      if (opts.json && !ACTIVE_JOB_STATES.has(job.state)){
+      // --json never follows: a script polls it, and tells "still running"
+      // (exit 5) from a verdict.
+      if (opts.json){
         console.log(JSON.stringify(job));
-        return process.exit(exitCodeForJobState(job.state));
+        return process.exit(ACTIVE_JOB_STATES.has(job.state) ? EXIT_CODES.ACTIVE : exitCodeForJobState(job.state));
       }
 
       console.log(`Job ${job.id} — ${job.state}${job.resource ? ' on ' + job.resource.name : ''}`);
