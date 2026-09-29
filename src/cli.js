@@ -168,8 +168,8 @@ program
   )
   .option(
     '--docker-image <name>',
-    'SW jobs only: a Docker image the Client runs as the DUT (e.g. alpine, alpine:3.20, registry.lab:5000/emu:1), ' +
-      'instead of its own sw.image; pulled from its registry or Docker Hub. The Client must allow it (sw.allowJobImages)'
+    'SW jobs only: a Docker image the Client runs as the job\'s DUT container, next to --command (e.g. registry.lab:5000/emu:1); ' +
+      'pulled from the registry it names, else Docker Hub. Without it, an SW job has no DUT container'
   )
   .option(
     '--git-repo <url...>',
