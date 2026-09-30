@@ -207,7 +207,7 @@ program
   )
   .option(
     '--dry-run',
-    'Exercise the full pipeline (schedule, accept, state transitions, logs, artifact, result) ' +
+    'Exercise the full pipeline (schedule, accept, state transitions, logs, result) ' +
       'without the Client flashing/running anything for real',
     false
   )
@@ -252,7 +252,7 @@ program
 
 program
   .command('status')
-  .description('Show status; follow log if running, show artifacts if done')
+  .description('Show status; follow log if running, verdict and test counts if done')
   .argument('<jobId>')
   .option('--json', 'Print the job as JSON once, without following it; exit code: its verdict, or 5 while it\'s still active', false)
   .action(async (jobId, opts) => {
@@ -274,10 +274,13 @@ program
         return process.exit(code);
       }
 
-      const { artifacts } = await c.get(`/jobs/${jobId}/artifacts`);
-      console.log(`Verdict: ${job.state}`);
-      for (const a of artifacts){
-        console.log(`  ${a.name}  ${a.url}`);
+      console.log(`Verdict: ${job.state}${job.exit_code != null ? ` (exit code ${job.exit_code})` : ''}`);
+      const s = job.summary;
+      if (s && Number.isFinite(s.total) && s.total > 0){
+        console.log(`Tests: ${s.total} total, ${s.passed} passed, ${s.failed} failed, ${s.skipped} skipped`);
+      }
+      if (job.message){
+        console.log(`Message: ${job.message}`);
       }
       process.exit(exitCodeForJobState(job.state));
     }
