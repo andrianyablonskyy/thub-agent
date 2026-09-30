@@ -82,9 +82,6 @@ async function followJob(client, jobId, { fromSeq = 0, waitMode = false, print =
             }
             else if (event === 'end'){
               print(`\nJob finished: ${data.state}`);
-              if (data.artifactsUrl){
-                print(`Artifacts: ${data.artifactsUrl}`);
-              }
               resolveOnce(exitCodeForJobState(data.state));
             }
           }

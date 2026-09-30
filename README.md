@@ -29,7 +29,7 @@ thub config set user "Your Name"     # optional default --user
 
 ```
 thub run      [options]        Submit a test job and follow its log
-thub status   <jobId>          Show status; follow log if running, show artifacts if done
+thub status   <jobId>          Show status; follow log if running, verdict and test counts if done
 thub cancel   <jobId>          Cancel a job
 thub resources                 List resources and their status
 thub jobs     [--mine] [--state <s>]   List recent jobs
@@ -68,7 +68,7 @@ Key options for `thub run`. **On the Client** names the environment variable the
 | `--json` | Machine-readable output. | — (Agent only) |
 
 - `thub run` prints the **job ID**, then streams logs until Ctrl-C. Ctrl-C detaches; the job keeps running on the Client.
-- `thub status <jobId>` prints the current state; if active it keeps streaming, if done it prints the verdict and artifact download links. `--json` prints the job once and never follows it (see [Job status and PASS/FAIL](#job-status-and-passfail)).
+- `thub status <jobId>` prints the current state; if active it keeps streaming, if done it prints the verdict, the command's exit code and the JUnit test counts. `--json` prints the job once and never follows it (see [Job status and PASS/FAIL](#job-status-and-passfail)).
 
 Exit codes make the Agent usable as a CI step:
 
@@ -222,14 +222,14 @@ thub run --type sw --git-repo git@bitbucket.org:yourorg/tests.git main --depth 1
 
 ## Job status and PASS/FAIL
 
-The verdict is `--command`'s exit code: `0` → **PASSED**, anything else → **FAILED**. ERROR, TIMEOUT, LOST and CANCELED mean the job didn't run to a verdict. JUnit XML written to `results/` or `artifacts/` in the work directory is uploaded and summed into the job's `summary`.
+The verdict is `--command`'s exit code: `0` → **PASSED**, anything else → **FAILED**. ERROR, TIMEOUT, LOST and CANCELED mean the job didn't run to a verdict. JUnit XML written to `results/` or `artifacts/` in the work directory is summed into the job's `summary` by the Client. Nothing is uploaded: a job's files stay in its workspace on the Client, deleted when it ends — publish anything you need to keep from `--command`, e.g. to Artifactory.
 
 **In CI:** `thub run … --wait` exits with the verdict code (table above): `0` PASSED, `1` FAILED, `2` infrastructure, `3` canceled.
 
 **Check a job:**
 
 ```bash
-thub status M-00125          # state; follows the log while active; then "Verdict: …" and artifact links; exit = verdict
+thub status M-00125          # state; follows the log while active; then "Verdict: …" and test counts; exit = verdict
 thub jobs --mine --state FAILED
 ```
 
