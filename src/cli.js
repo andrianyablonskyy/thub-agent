@@ -186,7 +186,7 @@ program
     '--env <vars>',
     'Environment variables for every command the Client runs for the job (git, --command): ' +
       'NAME=value[,NAME=value] (repeatable; a value may contain commas); --env NAME alone takes its value from this shell. ' +
-      'Any names (except THUB_*, GIT_TERMINAL_PROMPT, GIT_ALLOW_PROTOCOL). ' +
+      'Any names (except THUB_*, JOB_*, GIT_TERMINAL_PROMPT, GIT_ALLOW_PROTOCOL). ' +
       'Values reach only the Client running the job; the Coordinator masks them and drops them when the job ends',
     collectRepeatable,
     []

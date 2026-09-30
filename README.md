@@ -41,31 +41,31 @@ thub --version
 
 **Self-update.** An admin can request an update for this agent (or all agents) on the Coordinator's Agents page. The next command that talks to the Coordinator then installs it with `npm i -g` (retrying through `sudo` on an interactive terminal) and re-runs itself on the new version. If the install fails — e.g. no permission in CI — it prints the manual command and carries on with the current version; a run never fails because of an update. Set `THUB_NO_SELF_UPDATE=1` to opt out.
 
-Key options for `thub run`:
+Key options for `thub run`. **On the Client** names the environment variable the job's command finds the option's value in (see *Client environment variables* below):
 
-| Option | Description |
-|---|---|
-| `--type hw\|sw` | Required resource type. |
-| `--board <name>` / `--label <l>` | Required labels (repeatable). |
-| `--group <groupId>` | Restrict scheduling to resources that are members of this group. Falls back to `THUB_GROUP` / `thub config set group <id>`. |
-| `--client <name\|id>` | Run on this specific Client (resource name or id) only; the job waits in that Client's queue even if other matching resources are idle. |
-| `--user <name>` | Free-text job owner — a label, not an identity. Falls back to `THUB_USER` / `thub config set user <name>`. |
-| `--command <string>` | **Required.** The task's entry point: a shell command the Client runs (`sh -c`) in the task's work directory — the `--git-repo` checkout, else an empty directory — after preparing its inputs. Its exit code is the verdict. On HW it flashes the board itself (the Client doesn't); it gets `THUB_DUT_STLINK`/`_UART`/`_USB`/`_HOST`/`_CONTAINER`, `THUB_DOWNLOAD_<n>`, `THUB_DOWNLOADS_DIR`, `THUB_GIT_COMMIT`, `THUB_SUITE`, `THUB_META_*`. |
-| `--download-file <url>` | A file the Client downloads before running the command (repeatable, `http(s)`), into the job's `downloads/` directory. |
-| `--docker-image <name>` | SW only: a Docker image the Client runs as the **DUT** (an emulator the tests talk to, at `$THUB_DUT_HOST` / `$THUB_DUT_CONTAINER`) — any SW Client runs it; without one, an SW job has no DUT container. It's not where `--command` runs: to run the tests in an image, see [Docker](#docker). |
-| `--git-repo <url> [<branch>\|<tag>\|<commit>]` | A git repository the Client clones (default ref: the default branch); the command runs in the checkout. |
-| `--depth <n>` | With `--git-repo`: commits to fetch, default `1`; `0` = full history. |
-| `--git-options <string>` | With `--git-repo`: extra git options placed between `git` and its subcommand on the Client, e.g. `'-c core.sshCommand="ssh -i ~/.ssh/lab_key -p 2222"'`. Shell-quoted (no shell run). Stored with the job, so reference key files rather than inlining secrets. |
-| `--env <vars>` | Environment variables for every command the Client runs for the job (git and `--command`): `NAME=value[,NAME=value]`, repeatable; `--env NAME` alone takes the value from your shell. Any names — none means anything to the Agent or the Client (only `THUB_*`, `GIT_TERMINAL_PROMPT`, `GIT_ALLOW_PROTOCOL` are refused). Every value is a secret: it reaches only the Client running the job; the Coordinator masks it and drops it when the job ends. |
-| `--suite <name>` | Passed to the command as `THUB_SUITE`. |
-| `--arg <value>` | Extra argument for the command, as `"$@"` (repeatable). |
-| `--timeout <dur>` | e.g. `30m`, default `30m`. |
-| `--priority <n>` | 0–100; CI defaults to 50, CLI to 60 so a developer is not starved by a busy pipeline. |
-| `--meta <key=value>` | Arbitrary metadata stored on the job (repeatable) — CI job ids, git coordinates, anything else worth attaching to the run. |
-| `--dry-run` | Exercise the full pipeline without the Client executing anything for real. |
-| `--wait` | Do not detach on job end; exit with the job's verdict code (used in CI). |
-| `--detach` | Print the job id and exit immediately. |
-| `--json` | Machine-readable output. |
+| Option | Description | On the Client |
+|---|---|---|
+| `--type hw\|sw` | Required resource type. | `JOB_TYPE` |
+| `--board <name>` / `--label <l>` | Required labels (repeatable). | `JOB_BOARD`; `JOB_LABEL`, `JOB_LABEL_<n>` |
+| `--group <groupId>` | Restrict scheduling to resources that are members of this group. Falls back to `THUB_GROUP` / `thub config set group <id>`. | `JOB_GROUP` |
+| `--client <name\|id>` | Run on this specific Client (resource name or id) only; the job waits in that Client's queue even if other matching resources are idle. | `JOB_CLIENT` |
+| `--user <name>` | Free-text job owner — a label, not an identity. Falls back to `THUB_USER` / `thub config set user <name>`. | `JOB_USER` |
+| `--command <string>` | **Required.** The task's entry point: a shell command the Client runs (`sh -c`) in the task's work directory — the `--git-repo` checkout, else an empty directory — after preparing its inputs. Its exit code is the verdict. On HW it flashes the board itself (the Client doesn't); it gets `THUB_DUT_STLINK`/`_UART`/`_USB`/`_HOST`/`_CONTAINER`, `THUB_DOWNLOAD_<n>`, `THUB_DOWNLOADS_DIR`, `THUB_GIT_COMMIT`, `THUB_SUITE`, `THUB_META_*`. | `JOB_COMMAND` |
+| `--download-file <url>` | A file the Client downloads before running the command (repeatable, `http(s)`), into the job's `downloads/` directory. | `JOB_DOWNLOAD_FILE`, `JOB_DOWNLOAD_FILE_<n>` (URLs); `THUB_DOWNLOAD_<n>` (local paths) |
+| `--docker-image <name>` | SW only: a Docker image the Client runs as the **DUT** (an emulator the tests talk to, at `$THUB_DUT_HOST` / `$THUB_DUT_CONTAINER`) — any SW Client runs it; without one, an SW job has no DUT container. It's not where `--command` runs: to run the tests in an image, see [Docker](#docker). | `JOB_DOCKER_IMAGE` |
+| `--git-repo <url> [<branch>\|<tag>\|<commit>]` | A git repository the Client clones (default ref: the default branch); the command runs in the checkout. | `JOB_GIT_REPO_URL`, `JOB_GIT_BRANCH` |
+| `--depth <n>` | With `--git-repo`: commits to fetch, default `1`; `0` = full history. | `JOB_GIT_DEPTH` |
+| `--git-options <string>` | With `--git-repo`: extra git options placed between `git` and its subcommand on the Client, e.g. `'-c core.sshCommand="ssh -i ~/.ssh/lab_key -p 2222"'`. Shell-quoted (no shell run). Stored with the job, so reference key files rather than inlining secrets. | `JOB_GIT_OPTIONS` |
+| `--env <vars>` | Environment variables for every command the Client runs for the job (git and `--command`): `NAME=value[,NAME=value]`, repeatable; `--env NAME` alone takes the value from your shell. Any names — none means anything to the Agent or the Client (only `THUB_*`, `JOB_*`, `GIT_TERMINAL_PROMPT`, `GIT_ALLOW_PROTOCOL` are refused). Every value is a secret: it reaches only the Client running the job; the Coordinator masks it and drops it when the job ends. | each `NAME` itself |
+| `--suite <name>` | Passed to the command as `THUB_SUITE`. | `JOB_SUITE` (also `THUB_SUITE`) |
+| `--arg <value>` | Extra argument for the command, as `"$@"` (repeatable). | `JOB_ARG`, `JOB_ARG_<n>` (and `"$@"`) |
+| `--timeout <dur>` | e.g. `30m`, default `30m`. | `JOB_TIMEOUT` (seconds) |
+| `--priority <n>` | 0–100; CI defaults to 50, CLI to 60 so a developer is not starved by a busy pipeline. | `JOB_PRIORITY` |
+| `--meta <key=value>` | Arbitrary metadata stored on the job (repeatable) — CI job ids, git coordinates, anything else worth attaching to the run. | `JOB_META_<KEY>` (also `THUB_META_<KEY>`) |
+| `--dry-run` | Exercise the full pipeline without the Client executing anything for real. | — (the command doesn't run) |
+| `--wait` | Do not detach on job end; exit with the job's verdict code (used in CI). | — (Agent only) |
+| `--detach` | Print the job id and exit immediately. | — (Agent only) |
+| `--json` | Machine-readable output. | — (Agent only) |
 
 - `thub run` prints the **job ID**, then streams logs until Ctrl-C. Ctrl-C detaches; the job keeps running on the Client.
 - `thub status <jobId>` prints the current state; if active it keeps streaming, if done it prints the verdict and artifact download links. `--json` prints the job once and never follows it (see [Job status and PASS/FAIL](#job-status-and-passfail)).
@@ -204,6 +204,21 @@ thub run --type sw \
 ```
 
 The Client host needs Docker and the Client's user in the `docker` group; SW Clients have both. Add `--dry-run` to see every command a job would run on the Client (every `--env` value shown as `***`) without running any. More in the main README, §7.2.
+
+## Client environment variables
+
+On the Client, the job's `--command` gets every option above as a `JOB_<NAME>` variable (the **On the Client** column). A variable whose option wasn't given is unset. A repeatable option gives `<NAME>` with all values plus `<NAME>_<n>` for each one. It also gets:
+- its `--env` variables, under their own names;
+- `THUB_JOB_ID`, `THUB_WORK_DIR` (where it runs), `THUB_GIT_COMMIT`, `THUB_DOWNLOADS_DIR`, `THUB_DOWNLOADS`, `THUB_DOWNLOAD_<n>` (local paths), `THUB_SUITE` and `THUB_META_<KEY>`;
+- the DUT's `THUB_DUT_UART[_<n>]`, `THUB_DUT_USB[_<n>]`, `THUB_DUT_STLINK[_<n>]` (HW), or `THUB_DUT_HOST` and `THUB_DUT_CONTAINER` (SW with `--docker-image`).
+
+`THUB_*` and `JOB_*` names can't be set with `--env`. The full list is in the main README, §7.4.
+
+```bash
+thub run --type sw --git-repo git@bitbucket.org:yourorg/tests.git main --depth 1 \
+  --command 'git clone --depth "$JOB_GIT_DEPTH" ${JOB_GIT_BRANCH:+--branch "$JOB_GIT_BRANCH"} "$JOB_GIT_REPO_URL" src && cd src && ./run-tests.sh' \
+  --wait
+```
 
 ## Job status and PASS/FAIL
 
