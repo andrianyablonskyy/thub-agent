@@ -21,7 +21,7 @@ const { Command, Option } = require('commander'),
     splitArgs,
     parseEnvList
   } = require('@andrian.yablonskyy/thub-common'),
-  { resolveConnection, resolveGroup, resolveUser, writeConfigFile, readConfigFile, CONFIG_PATH } = require('./config'),
+  { resolveConnection, resolveUser, writeConfigFile, readConfigFile, CONFIG_PATH } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming'),
   { applyRequestedUpdate, installAgent, version } = require('./self-update');
@@ -141,11 +141,6 @@ program
   .option('--board <name>', 'Shorthand for --label board:<name>')
   .option('--label <label>', 'Required label the resource must have (repeatable)', collectRepeatable, [])
   .option(
-    '--group <groupId>',
-    'Restrict scheduling to resources that are members of this group (§13.1). ' +
-      'Overrides THUB_GROUP / config file; leave unset for an unconstrained run.'
-  )
-  .option(
     '--client <nameOrId>',
     'Run on this specific Client (resource name or id) only; the job waits in that Client\'s queue ' +
       'even if other matching resources are idle.'
@@ -218,11 +213,11 @@ program
         c = client(),
         labels = [...(opts.board ? [`board:${opts.board}`] : []), ...opts.label],
         meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
-        group = resolveGroup({ group: opts.group }),
         user = resolveUser({ user: opts.user }),
 
         spec = {
-          target: { type: opts.type, labels, ...(group ? { group } : {}), ...(opts.client ? { client: opts.client } : {}) },
+          // No group: the Coordinator uses this key's, set on the dashboard (§13.1).
+          target: { type: opts.type, labels, ...(opts.client ? { client: opts.client } : {}) },
           ...task,
           timeoutSec: parseDurationSec(opts.timeout),
           ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
@@ -375,13 +370,15 @@ function formatBytes(bytes){
 const config = program.command('config').description('Manage local Agent configuration');
 config
   .command('set')
-  .argument('<name>', 'url | key | group | user')
+  .argument('<name>', 'url | key | user')
   .argument('<value>')
   .action((name, value) => {
     // `token` is the old name of `key`.
     const setting = name === 'token' ? 'key' : name;
-    if (!['url', 'key', 'group', 'user'].includes(setting)){
-      console.error('Error: the setting must be "url", "key", "group", or "user"');
+    if (!['url', 'key', 'user'].includes(setting)){
+      console.error(setting === 'group'
+        ? 'Error: a job\'s group is set on the dashboard now (Users / CI tokens), not in the Agent'
+        : 'Error: the setting must be "url", "key", or "user"');
       process.exit(EXIT_CODES.USAGE);
     }
     const { token: _old, ...current } = readConfigFile();
@@ -391,8 +388,10 @@ config
 
 // Who this access key belongs to (§10.3).
 function describeMe(me){
-  const role = me.user?.role ? me.user.role.charAt(0).toUpperCase() + me.user.role.slice(1) : '';
-  return me.user ? `${me.user.username} (${role})${me.user.email ? ` <${me.user.email}>` : ''}` : `CI token "${me.name}"`;
+  const role = me.user?.role ? me.user.role.charAt(0).toUpperCase() + me.user.role.slice(1) : '',
+    who = me.user ? `${me.user.username} (${role})${me.user.email ? ` <${me.user.email}>` : ''}` : `CI token "${me.name}"`;
+  // Older Coordinators don't say: then nothing about groups.
+  return me.group === undefined ? who : `${who}\nJobs run in: ${me.group ? `group ${me.group}` : 'any resource (no group)'}`;
 }
 
 program
