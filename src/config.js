@@ -1,6 +1,6 @@
 /**
  * @file        packages/agent/src/config.js
- * @description Agent config resolution: flags > env > config file > bundled default (url/token/group/user)
+ * @description Agent config resolution: flags > env > config file > bundled default (url/token/user)
  *
  * @author      Andrian Yablonskyy
  * @copyright   Copyright (c) 2026 Andrian Yablonskyy. All rights reserved.
@@ -65,16 +65,8 @@ function resolveConnection(flags = {}){
   return { url, token, keySource };
 }
 
-// Optional default for `--group` (§4.3/§7.1) — same flags > env > file
-// precedence as url/token, but unset is fine: a job just runs unconstrained
-// by group, same as if `groups` had never been used at all.
-function resolveGroup(flags = {}){
-  const file = { ...readJsonFile(PACKAGE_DEFAULT_CONFIG_PATH), ...readConfigFile() };
-  return flags.group || process.env.THUB_GROUP || file.group || undefined;
-}
-
-// Optional default for `--user` (§4.3/§7.1) — same flags > env > file
-// precedence as group. Purely a label (who submitted this job), not an
+// Optional default for `--user` (§4.3/§7.1) — flags > env > file, like
+// url/token. Purely a label (who submitted this job), not an
 // identity: unset is fine, and nothing on the Coordinator side enforces
 // or authenticates it.
 function resolveUser(flags = {}){
@@ -82,4 +74,4 @@ function resolveUser(flags = {}){
   return flags.user || process.env.THUB_USER || file.user || undefined;
 }
 
-module.exports = { CONFIG_PATH, readConfigFile, writeConfigFile, resolveConnection, resolveGroup, resolveUser };
+module.exports = { CONFIG_PATH, readConfigFile, writeConfigFile, resolveConnection, resolveUser };

@@ -14,7 +14,7 @@ npx -y @andrian.yablonskyy/thub-agent run --type sw --download-file "$IMAGE_URL"
 
 ## Configuration
 
-Read from flags (`--url`, `--key`), then environment (`THUB_URL`, `THUB_KEY`, `THUB_GROUP`, `THUB_USER`; the old names `--token`/`THUB_TOKEN` still work), then `~/.config/thub/agent.json`, then a bundled default. `url`/`token` are required by the time a command actually talks to the Coordinator; `group`/`user` are optional everywhere.
+Read from flags (`--url`, `--key`), then environment (`THUB_URL`, `THUB_KEY`, `THUB_USER`; the old names `--token`/`THUB_TOKEN` still work), then `~/.config/thub/agent.json`, then a bundled default. `url`/`token` are required by the time a command actually talks to the Coordinator; `group`/`user` are optional everywhere.
 
 `npm install -g` creates `~/.config/thub/agent.json` for you (blank `url`/`token`, so nothing works until you set them) if it doesn't already exist — a re-install never overwrites it. Fill it in with `thub config set`:
 
@@ -24,7 +24,6 @@ thub config set key thk_...       # your access key: from an admin (Users), or y
 thub whoami                       # jane (user) <jane@example.com>
 thub key show                     # its last characters, created, last used
 thub key rotate                   # a new key; the old one stops at once (saved here if it came from here)
-thub config set group 548ae4ae-...   # optional default --group
 thub config set user "Your Name"     # optional default --user
 ```
 
@@ -36,7 +35,7 @@ thub status   <jobId>          Show status; follow log if running, verdict, test
 thub cancel   <jobId>          Cancel a job
 thub resources                 List resources and their status
 thub jobs     [--mine] [--state <s>]   List recent jobs (a cli token: only its own; a ci token: all, or its own with --mine)
-thub config   set <key> <value>        Save coordinator URL / token / default group / default user locally
+thub config   set <key> <value>        Save coordinator URL / key / default user locally
 thub check-update                      Compare this Agent with the latest published version
 thub self-update [--to <x.y.z>]        Update this Agent with npm i -g
 thub --version
@@ -50,7 +49,6 @@ Key options for `thub run`. **On the Client** names the environment variable the
 |---|---|---|
 | `--type hw\|sw` | Required resource type. | `JOB_TYPE` |
 | `--board <name>` / `--label <l>` | Required labels (repeatable). | `JOB_BOARD`; `JOB_LABEL`, `JOB_LABEL_<n>` |
-| `--group <groupId>` | Restrict scheduling to resources that are members of this group. Falls back to `THUB_GROUP` / `thub config set group <id>`. | `JOB_GROUP` |
 | `--client <name\|id>` | Run on this specific Client (resource name or id) only; the job waits in that Client's queue even if other matching resources are idle. | `JOB_CLIENT` |
 | `--user <name>` | Free-text job owner — a label, not an identity. Falls back to `THUB_USER` / `thub config set user <name>`. | `JOB_USER` |
 | `--command <string>` | **Required.** The task's entry point: a shell command the Client runs (`sh -c`) in the task's work directory — the `--git-repo` checkout, else an empty directory — after preparing its inputs. Its exit code is the verdict. On HW it flashes the board itself (the Client doesn't); it gets `THUB_DUT_STLINK`/`_UART`/`_USB`/`_HOST`/`_CONTAINER`, `THUB_DOWNLOAD_<n>`, `THUB_DOWNLOADS_DIR`, `THUB_GIT_COMMIT`, `THUB_SUITE`, `THUB_META_*`. | `JOB_COMMAND` |
@@ -122,12 +120,7 @@ thub run --type sw --download-file https://does-not-exist.invalid/app.bin \
   --command ./ci/test.sh --dry-run --wait
 ```
 
-**Run on a specific resource group only:**
-
-```bash
-thub run --type sw --git-repo "$TESTS_REPO" --command ./ci/test.sh \
-  --group 548ae4ae-ac5b-401f-acaa-24bbe790e62d --wait
-```
+**Run in a resource group:** there's no `--group` option. An admin or maintainer gives your user (or a CI token) one group on the dashboard, and every job it submits runs only on that group's resources; `thub whoami` shows it.
 
 **Label a job with its owner** — purely informational, shows up on the dashboard, in `thub jobs`, and on the Client's own console:
 
