@@ -32,7 +32,7 @@ thub run      [options]        Submit a test job and follow its log
 thub status   <jobId>          Show status; follow log if running, verdict and test counts if done
 thub cancel   <jobId>          Cancel a job
 thub resources                 List resources and their status
-thub jobs     [--mine] [--state <s>]   List recent jobs
+thub jobs     [--mine] [--state <s>]   List recent jobs (a cli token: only its own; a ci token: all, or its own with --mine)
 thub config   set <key> <value>        Save coordinator URL / token / default group / default user locally
 thub check-update                      Compare this Agent with the latest published version
 thub self-update [--to <x.y.z>]        Update this Agent with npm i -g
