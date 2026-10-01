@@ -252,7 +252,7 @@ program
 
 program
   .command('status')
-  .description('Show status; follow log if running, verdict and test counts if done')
+  .description('Show status; follow log if running, verdict, test counts and artifacts if done')
   .argument('<jobId>')
   .option('--json', 'Print the job as JSON once, without following it; exit code: its verdict, or 5 while it\'s still active', false)
   .action(async (jobId, opts) => {
@@ -281,6 +281,13 @@ program
       }
       if (job.message){
         console.log(`Message: ${job.message}`);
+      }
+      // What the job published elsewhere and reported (links, not files).
+      if (job.artifacts?.length){
+        console.log('Artifacts:');
+        for (const a of job.artifacts){
+          console.log(`  ${a.name}  ${a.size != null ? formatBytes(a.size) : '—'}  ${a.link}`);
+        }
       }
       process.exit(exitCodeForJobState(job.state));
     }
@@ -351,6 +358,18 @@ program
       fail(err);
     }
   });
+
+// 1233 -> "1.2 KB" (1024-based), for artifact sizes.
+function formatBytes(bytes){
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  let value = bytes,
+    unit = 0;
+  while (value >= 1024 && unit < units.length - 1){
+    value /= 1024;
+    unit += 1;
+  }
+  return unit === 0 ? `${value} B` : `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
 
 const config = program.command('config').description('Manage local Agent configuration');
 config
