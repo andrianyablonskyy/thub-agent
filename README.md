@@ -29,7 +29,7 @@ thub config set user "Your Name"     # optional default --user
 
 ```
 thub run      [options]        Submit a test job and follow its log
-thub status   <jobId>          Show status; follow log if running, verdict and test counts if done
+thub status   <jobId>          Show status; follow log if running, verdict, test counts and artifacts if done
 thub cancel   <jobId>          Cancel a job
 thub resources                 List resources and their status
 thub jobs     [--mine] [--state <s>]   List recent jobs (a cli token: only its own; a ci token: all, or its own with --mine)
