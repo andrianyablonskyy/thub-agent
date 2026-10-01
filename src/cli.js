@@ -330,7 +330,7 @@ program
 program
   .command('jobs')
   .description('List recent jobs')
-  .option('--mine', 'Only jobs submitted by this agent token', false)
+  .option('--mine', 'Only jobs submitted by this agent token (always so for a cli token, which sees only its own)', false)
   .option('--state <state>', 'Filter by state')
   .option('--json', 'Machine-readable output', false)
   .action(async (opts) => {
