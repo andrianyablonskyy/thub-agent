@@ -48,7 +48,7 @@ Key options for `thub run`. **On the Client** names the environment variable the
 | Option | Description | On the Client |
 |---|---|---|
 | `--type hw\|sw` | Required resource type. | `JOB_TYPE` |
-| `--board <name>` / `--label <l>` | Required labels (repeatable). | `JOB_BOARD`; `JOB_LABEL`, `JOB_LABEL_<n>` |
+| `--label <l>` | Required labels (repeatable; a board is `--label board:<name>`): the job runs only on a runner that has all of them. Each 1–64 characters, no whitespace, commas or semicolons. | `JOB_LABEL`, `JOB_LABEL_<n>` |
 | `--client <name\|id>` | Run on this specific Client (resource name or id) only; the job waits in that Client's queue even if other matching resources are idle. | `JOB_CLIENT` |
 | `--user <name>` | Free-text job owner — a label, not an identity. Falls back to `THUB_USER` / `thub config set user <name>`. | `JOB_USER` |
 | `--command <string>` | **Required.** The task's entry point: a shell command the Client runs (`sh -c`) in the task's work directory — the `--git-repo` checkout, else an empty directory — after preparing its inputs. Its exit code is the verdict. On HW it flashes the board itself (the Client doesn't); it gets `THUB_DUT_STLINK`/`_UART`/`_USB`/`_HOST`/`_CONTAINER`, `THUB_DOWNLOAD_<n>`, `THUB_DOWNLOADS_DIR`, `THUB_GIT_COMMIT`, `THUB_SUITE`, `THUB_META_*`. | `JOB_COMMAND` |
@@ -88,7 +88,7 @@ Exit codes make the Agent usable as a CI step:
 **Run a task** — download the firmware, check out the tests at a tag, flash and test (HW):
 
 ```bash
-thub run --type hw --board nucleo-f401re \
+thub run --type hw --label board:nucleo-f401re \
   --download-file "$IMAGE_URL" \
   --git-repo https://github.com/yourorg/firmware-tests.git v1.4.0 \
   --command 'st-flash --serial "$THUB_DUT_STLINK" --reset write "$THUB_DOWNLOAD_1" 0x08000000 && ./ci/test.sh "$@"' \
@@ -125,7 +125,7 @@ thub run --type sw --download-file https://does-not-exist.invalid/app.bin \
 **Label a job with its owner** — purely informational, shows up on the dashboard, in `thub jobs`, and on the Client's own console:
 
 ```bash
-thub run --type hw --board nucleo-f401re \
+thub run --type hw --label board:nucleo-f401re \
   --git-repo "$TESTS_REPO" --command ./ci/test.sh --user "Your Name" --wait
 ```
 

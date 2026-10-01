@@ -134,12 +134,27 @@ function fail(err){
   process.exit(err.status && Number.isInteger(err.status) && err.status < 100 ? err.status : EXIT_CODES.USAGE);
 }
 
+// --label: the labels a runner must all have for the job (§7.1).
+// Checked here against the Coordinator's rule, so a typo fails before the
+// job is sent.
+const LABEL_RE = /^[^\s,;]{1,64}$/;
+function requiredLabels(opts){
+  const labels = opts.label,
+    bad = labels.filter((l) => !LABEL_RE.test(l));
+  if (bad.length){
+    const err = new Error(`Invalid label: ${bad.join(', ')} — 1–64 characters, no spaces, commas or semicolons`);
+    err.status = EXIT_CODES.USAGE;
+    throw err;
+  }
+  return [...new Set(labels)];
+}
+
 program
   .command('run')
   .description('Submit a test job and follow its log')
   .requiredOption('--type <hw|sw>', 'Required resource type')
-  .option('--board <name>', 'Shorthand for --label board:<name>')
-  .option('--label <label>', 'Required label the resource must have (repeatable)', collectRepeatable, [])
+  .option('--label <label>', 'A label the runner must have (repeatable; the job runs only on a runner with all of them). ' +
+    '1–64 characters, no spaces, commas or semicolons', collectRepeatable, [])
   .option(
     '--client <nameOrId>',
     'Run on this specific Client (resource name or id) only; the job waits in that Client\'s queue ' +
@@ -211,7 +226,7 @@ program
     try {
       const task = taskFromOptions(opts),
         c = client(),
-        labels = [...(opts.board ? [`board:${opts.board}`] : []), ...opts.label],
+        labels = requiredLabels(opts),
         meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
         user = resolveUser({ user: opts.user }),
 
