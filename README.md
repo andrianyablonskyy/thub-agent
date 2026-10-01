@@ -14,13 +14,16 @@ npx -y @andrian.yablonskyy/thub-agent run --type sw --download-file "$IMAGE_URL"
 
 ## Configuration
 
-Read from flags, then environment (`THUB_URL`, `THUB_TOKEN`, `THUB_GROUP`, `THUB_USER`), then `~/.config/thub/agent.json`, then a bundled default. `url`/`token` are required by the time a command actually talks to the Coordinator; `group`/`user` are optional everywhere.
+Read from flags (`--url`, `--key`), then environment (`THUB_URL`, `THUB_KEY`, `THUB_GROUP`, `THUB_USER`; the old names `--token`/`THUB_TOKEN` still work), then `~/.config/thub/agent.json`, then a bundled default. `url`/`token` are required by the time a command actually talks to the Coordinator; `group`/`user` are optional everywhere.
 
 `npm install -g` creates `~/.config/thub/agent.json` for you (blank `url`/`token`, so nothing works until you set them) if it doesn't already exist — a re-install never overwrites it. Fill it in with `thub config set`:
 
 ```bash
 thub config set url https://thub.example.com
-thub config set token agt_...
+thub config set key thk_...       # your access key: from an admin (Users), or your dashboard profile
+thub whoami                       # jane (user) <jane@example.com>
+thub key show                     # its last characters, created, last used
+thub key rotate                   # a new key; the old one stops at once (saved here if it came from here)
 thub config set group 548ae4ae-...   # optional default --group
 thub config set user "Your Name"     # optional default --user
 ```
@@ -249,7 +252,7 @@ test-sw:
   runs-on: ubuntu-latest
   env:
     THUB_URL: https://thub.example.com
-    THUB_TOKEN: ${{ secrets.THUB_AGENT_TOKEN }}
+    THUB_KEY: ${{ secrets.THUB_CI_TOKEN }}   # a CI token (dashboard → CI tokens)
   steps:
     - run: |
         npx -y @andrian.yablonskyy/thub-agent run --type sw \

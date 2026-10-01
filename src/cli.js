@@ -15,13 +15,13 @@
 
 'use strict';
 
-const { Command } = require('commander'),
+const { Command, Option } = require('commander'),
   {
     ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime,
     splitArgs,
     parseEnvList
   } = require('@andrian.yablonskyy/thub-common'),
-  { resolveConnection, resolveGroup, resolveUser, writeConfigFile, readConfigFile } = require('./config'),
+  { resolveConnection, resolveGroup, resolveUser, writeConfigFile, readConfigFile, CONFIG_PATH } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming'),
   { applyRequestedUpdate, installAgent, version } = require('./self-update');
@@ -31,7 +31,8 @@ program
   .name('thub')
   .description('TestHub Agent — submit test jobs and follow them, from CI or your laptop')
   .option('--url <url>', 'Coordinator URL (overrides THUB_URL / config file)')
-  .option('--token <token>', 'Agent token (overrides THUB_TOKEN / config file)')
+  .option('--key <key>', 'Your access key (overrides THUB_KEY / config file)')
+  .addOption(new Option('--token <token>', 'Old name of --key').hideHelp())
   .version(version);
 
 // An admin-requested self-update (README §10.2) is applied at the start of
@@ -374,16 +375,79 @@ function formatBytes(bytes){
 const config = program.command('config').description('Manage local Agent configuration');
 config
   .command('set')
-  .argument('<key>', 'url | token | group | user')
+  .argument('<name>', 'url | key | group | user')
   .argument('<value>')
-  .action((key, value) => {
-    if (!['url', 'token', 'group', 'user'].includes(key)){
-      console.error('Error: key must be "url", "token", "group", or "user"');
+  .action((name, value) => {
+    // `token` is the old name of `key`.
+    const setting = name === 'token' ? 'key' : name;
+    if (!['url', 'key', 'group', 'user'].includes(setting)){
+      console.error('Error: the setting must be "url", "key", "group", or "user"');
       process.exit(EXIT_CODES.USAGE);
     }
-    const current = readConfigFile();
-    writeConfigFile({ ...current, [key]: value });
-    console.log(`Saved ${key} to config`);
+    const { token: _old, ...current } = readConfigFile();
+    writeConfigFile({ ...(setting === 'key' ? current : { ...current, ...(_old ? { token: _old } : {}) }), [setting]: value });
+    console.log(`Saved ${setting} to config`);
+  });
+
+// Who this access key belongs to (§10.3).
+function describeMe(me){
+  const role = me.user?.role ? me.user.role.charAt(0).toUpperCase() + me.user.role.slice(1) : '';
+  return me.user ? `${me.user.username} (${role})${me.user.email ? ` <${me.user.email}>` : ''}` : `CI token "${me.name}"`;
+}
+
+program
+  .command('whoami')
+  .description('Show whose access key this Agent uses')
+  .action(async () => {
+    try {
+      console.log(describeMe(await client().get('/me')));
+    }
+    catch (err){
+      fail(err);
+    }
+  });
+
+const keyCommand = program.command('key').description('Your access key');
+keyCommand
+  .command('show')
+  .description('Show your access key\'s details (never the key itself — only its last characters)')
+  .action(async () => {
+    try {
+      const me = await client().get('/me'),
+        { keySource } = resolveConnection(program.opts());
+      console.log(`User:      ${describeMe(me)}`);
+      if (me.key){
+        console.log(`Key:       …${me.key.hint || '????'} (from ${keySource === 'file' ? CONFIG_PATH : keySource === 'flag' ? '--key' : keySource})`);
+        console.log(`Created:   ${formatDateTime(me.key.createdAt)}`);
+        console.log(`Last used: ${me.key.lastUsedAt ? formatDateTime(me.key.lastUsedAt) : 'never'}`);
+      }
+    }
+    catch (err){
+      fail(err);
+    }
+  });
+keyCommand
+  .command('rotate')
+  .description('Replace your access key: the current one stops working at once')
+  .action(async () => {
+    try {
+      const { keySource } = resolveConnection(program.opts()),
+        { key, username } = await client().post('/me/key/rotate');
+      if (keySource === 'file'){
+        const { token: _old, ...current } = readConfigFile();
+        writeConfigFile({ ...current, key });
+        console.log(`New access key for ${username} saved to ${CONFIG_PATH} — the old one has stopped working.`);
+      }
+      else {
+        console.log(`New access key for ${username} — the old one has stopped working. Shown only now:\n\n  ${key}\n`);
+        console.log(keySource === 'flag'
+          ? 'Use it with --key from now on (or save it: thub config set key <key>).'
+          : `Update ${keySource} (e.g. your CI secret) with it, or save it: thub config set key <key>.`);
+      }
+    }
+    catch (err){
+      fail(err);
+    }
   });
 
 program

@@ -18,7 +18,8 @@ const fs = require('node:fs'),
   path = require('node:path');
 
 // §7: "Configuration is read from flags, then environment (THUB_URL,
-// THUB_TOKEN), then ~/.config/thub/agent.json."
+// THUB_KEY), then ~/.config/thub/agent.json." The access key (§10.3) used to
+// be called a token: --token, THUB_TOKEN and a saved `token` still work.
 const CONFIG_PATH = path.join(os.homedir(), '.config', 'thub', 'agent.json'),
 
   // Bundled with the package as a last-resort default, below the user's own
@@ -44,19 +45,24 @@ function writeConfigFile(config){
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
 }
 
+// `keySource` says where the key came from — `thub key rotate` saves the
+// new one only where it can (the config file), and says what to update
+// otherwise.
 function resolveConnection(flags = {}){
   const file = { ...readJsonFile(PACKAGE_DEFAULT_CONFIG_PATH), ...readConfigFile() },
     url = flags.url || process.env.THUB_URL || file.url,
-    token = flags.token || process.env.THUB_TOKEN || file.token;
+    [token, keySource] = flags.key || flags.token ? [flags.key || flags.token, 'flag']
+      : process.env.THUB_KEY || process.env.THUB_TOKEN ? [process.env.THUB_KEY || process.env.THUB_TOKEN, process.env.THUB_KEY ? 'THUB_KEY' : 'THUB_TOKEN']
+        : file.key || file.token ? [file.key || file.token, 'file'] : [null, null];
   if (!url || !token){
     const err = new Error(
-      'Missing coordinator URL or token. Set with `thub config set url <url>` / `thub config set token <token>`, ' +
-        'or THUB_URL / THUB_TOKEN, or --url / --token.'
+      'Missing Coordinator URL or access key. Set them with `thub config set url <url>` and `thub config set key <key>`, ' +
+        'or THUB_URL / THUB_KEY, or --url / --key. An admin gives you your key (Users), or create it on your dashboard profile.'
     );
     err.status = 4;
     throw err;
   }
-  return { url, token };
+  return { url, token, keySource };
 }
 
 // Optional default for `--group` (§4.3/§7.1) — same flags > env > file
