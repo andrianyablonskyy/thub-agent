@@ -18,10 +18,9 @@
 const { Command, Option } = require('commander'),
   {
     ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime,
-    splitArgs,
     parseEnvList
   } = require('@andrian.yablonskyy/thub-common'),
-  { resolveConnection, resolveUser, writeConfigFile, readConfigFile, CONFIG_PATH } = require('./config'),
+  { resolveConnection, writeConfigFile, readConfigFile, CONFIG_PATH } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming'),
   { applyRequestedUpdate, installAgent, version } = require('./self-update');
@@ -57,8 +56,8 @@ function client(){
   return new ApiClient({ baseUrl: url, token, userAgent: `thub-agent/${version}` });
 }
 
-// --command (mandatory), --download-file (repeatable), --docker-image (SW
-// only) and --git-repo <url> [ref] --depth <n> -> the job spec's task fields.
+// --command (mandatory), --download-file (repeatable) and --env -> the job
+// spec's task fields. A git checkout or a container is the command's own job.
 // Checked here too, so mistakes explain themselves before anything is sent.
 function taskFromOptions(opts){
   const downloads = opts.downloadFile.map((url) => {
@@ -69,38 +68,6 @@ function taskFromOptions(opts){
     }),
     task = { command: opts.command, args: opts.arg, suite: opts.suite, ...(downloads.length ? { downloads } : {}) };
 
-  if (opts.dockerImage){
-    if (opts.type !== 'sw'){
-      throw usageError('--docker-image only works for SW jobs (--type sw): an HW job runs on the physical board');
-    }
-    task.image = opts.dockerImage;
-  }
-
-  if (opts.depth !== undefined && !opts.gitRepo){
-    throw usageError('--depth only applies to --git-repo');
-  }
-  if (opts.gitOptions !== undefined && !opts.gitRepo){
-    throw usageError('--git-options only applies to --git-repo');
-  }
-  if (opts.gitOptions){
-    try {
-      splitArgs(opts.gitOptions);
-    }
-    catch (err){
-      throw usageError(`--git-options: ${err.message}`);
-    }
-  }
-  if (opts.gitRepo){
-    const [url, ref, ...extra] = opts.gitRepo;
-    if (extra.length){
-      throw usageError(`--git-repo takes a URL and at most one branch, tag or commit (got: ${opts.gitRepo.join(' ')})`);
-    }
-    const depth = opts.depth === undefined ? 1 : Number(opts.depth);
-    if (!Number.isInteger(depth) || depth < 0){
-      throw usageError(`--depth ${opts.depth}: must be a whole number (0 = full history)`);
-    }
-    task.git = { url, ...(ref ? { ref } : {}), depth, ...(opts.gitOptions ? { options: opts.gitOptions } : {}) };
-  }
   let env;
   try {
     env = parseEnvList(opts.env);
@@ -160,15 +127,12 @@ program
     'Run on this specific Client (resource name or id) only; the job waits in that Client\'s queue ' +
       'even if other matching resources are idle.'
   )
-  .option(
-    '--user <name>',
-    'Free-text job owner, shown on the Client and the dashboard to tell whose job is whose ' +
-      '— purely a label, not an identity. Overrides THUB_USER / config file.'
-  )
   .requiredOption(
     '--command <string>',
-    'The task\'s entry point: a shell command the Client runs (sh -c) in the task\'s work directory — the --git-repo ' +
-      'checkout if given — after downloading --download-file files. --arg values arrive as "$@"'
+    'The task\'s entry point: a shell command the Client runs (sh -c) in the job\'s work directory, after downloading ' +
+      '--download-file files. --arg values arrive as "$@". Anything else the job needs it does itself — e.g. ' +
+      '`git clone "https://x-access-token:$GH_TOKEN@github.com/org/tests.git" . && ./ci/test.sh` or ' +
+      '`docker run --rm "$IMAGE" ./run.sh` — with credentials passed by --env'
   )
   .option(
     '--download-file <url>',
@@ -178,26 +142,10 @@ program
     []
   )
   .option(
-    '--docker-image <name>',
-    'SW jobs only: a Docker image the Client runs as the job\'s DUT container, next to --command (e.g. registry.lab:5000/emu:1); ' +
-      'pulled from the registry it names, else Docker Hub. Without it, an SW job has no DUT container'
-  )
-  .option(
-    '--git-repo <url...>',
-    'A git repository the Client clones before running --command, then runs it there: <url> [<branch>|<tag>|<commit>] ' +
-      '(https://, ssh://, git:// or user@host:path; default ref: the default branch)'
-  )
-  .option('--depth <n>', 'With --git-repo: how many commits to fetch (default 1; 0 = full history)')
-  .option(
-    '--git-options <string>',
-    'With --git-repo: extra git options, placed between `git` and its subcommand on the Client (shell-quoted, no shell run), ' +
-      'e.g. \'-c core.sshCommand="ssh -i ~/.ssh/lab_key -p 2222"\'. Stored with the job — reference key files, don\'t inline secrets'
-  )
-  .option(
     '--env <vars>',
-    'Environment variables for every command the Client runs for the job (git, --command): ' +
+    'Environment variables for --command — how data and secrets (a git token, a registry password) reach the job: ' +
       'NAME=value[,NAME=value] (repeatable; a value may contain commas); --env NAME alone takes its value from this shell. ' +
-      'Any names (except THUB_*, JOB_*, GIT_TERMINAL_PROMPT, GIT_ALLOW_PROTOCOL). ' +
+      'Any names except THUB_* and JOB_*. ' +
       'Values reach only the Client running the job; the Coordinator masks them and drops them when the job ends',
     collectRepeatable,
     []
@@ -228,15 +176,13 @@ program
         c = client(),
         labels = requiredLabels(opts),
         meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
-        user = resolveUser({ user: opts.user }),
 
         spec = {
-          // No group: the Coordinator uses this key's, set on the dashboard (§13.1).
+          // No group or user: the Coordinator takes both from this key (§13.1).
           target: { type: opts.type, labels, ...(opts.client ? { client: opts.client } : {}) },
           ...task,
           timeoutSec: parseDurationSec(opts.timeout),
           ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
-          ...(user ? { user } : {}),
           ...(Object.keys(meta).length ? { meta } : {}),
           ...(opts.dryRun ? { dryRun: true } : {})
         },
@@ -385,15 +331,17 @@ function formatBytes(bytes){
 const config = program.command('config').description('Manage local Agent configuration');
 config
   .command('set')
-  .argument('<name>', 'url | key | user')
+  .argument('<name>', 'url | key')
   .argument('<value>')
   .action((name, value) => {
     // `token` is the old name of `key`.
     const setting = name === 'token' ? 'key' : name;
-    if (!['url', 'key', 'user'].includes(setting)){
+    if (!['url', 'key'].includes(setting)){
       console.error(setting === 'group'
         ? 'Error: a job\'s group is set on the dashboard now (Users / CI tokens), not in the Agent'
-        : 'Error: the setting must be "url", "key", or "user"');
+        : setting === 'user'
+          ? 'Error: a job\'s user comes from your access key now (thub whoami shows it), not from the Agent'
+          : 'Error: the setting must be "url" or "key"');
       process.exit(EXIT_CODES.USAGE);
     }
     const { token: _old, ...current } = readConfigFile();
