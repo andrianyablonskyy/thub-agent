@@ -65,13 +65,4 @@ function resolveConnection(flags = {}){
   return { url, token, keySource };
 }
 
-// Optional default for `--user` (§4.3/§7.1) — flags > env > file, like
-// url/token. Purely a label (who submitted this job), not an
-// identity: unset is fine, and nothing on the Coordinator side enforces
-// or authenticates it.
-function resolveUser(flags = {}){
-  const file = { ...readJsonFile(PACKAGE_DEFAULT_CONFIG_PATH), ...readConfigFile() };
-  return flags.user || process.env.THUB_USER || file.user || undefined;
-}
-
-module.exports = { CONFIG_PATH, readConfigFile, writeConfigFile, resolveConnection, resolveUser };
+module.exports = { CONFIG_PATH, readConfigFile, writeConfigFile, resolveConnection };
