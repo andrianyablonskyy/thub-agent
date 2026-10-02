@@ -52,7 +52,7 @@ Key options for `thub run`. **On the Client** names the environment variable the
 | `--command <string>` | **Required.** The task's entry point: a shell command the Client runs (`sh -c`) in the job's work directory, after the downloads. It clones repositories and runs containers itself (see Git and Docker below), with credentials from `--env`. Exit code 0 = PASSED. | `JOB_COMMAND` | `JOB_COMMAND` |
 | `--download-file <url>` | A file the Client downloads before running the command (repeatable, `http(s)`), into the job's `downloads/` directory. | `JOB_DOWNLOAD_FILE`, `JOB_DOWNLOAD_FILE_<n>` (URLs); `THUB_DOWNLOAD_<n>` (local paths) |
 | `--env <vars>` | Environment variables for every command the Client runs for the job (git and `--command`): `NAME=value[,NAME=value]`, repeatable; `--env NAME` alone takes the value from your shell. Any names — none means anything to the Agent or the Client (only `THUB_*`, `JOB_*`, `GIT_TERMINAL_PROMPT`, `GIT_ALLOW_PROTOCOL` are refused). Every value is a secret: it reaches only the Client running the job; the Coordinator masks it and drops it when the job ends. | each `NAME` itself |
-| `--suite <name>` | Passed to the command as `THUB_SUITE`. | `JOB_SUITE` (also `THUB_SUITE`) |
+| `--suite <name>` | Test suite name for the command. | `JOB_SUITE` |
 | `--arg <value>` | Extra argument for the command, as `"$@"` (repeatable). | `JOB_ARG`, `JOB_ARG_<n>` (and `"$@"`) |
 | `--timeout <dur>` | e.g. `30m`, default `30m`. | `JOB_TIMEOUT` (seconds) |
 | `--priority <n>` | 0–100; CI defaults to 50, CLI to 60 so a developer is not starved by a busy pipeline. | `JOB_PRIORITY` |
@@ -85,8 +85,8 @@ Exit codes make the Agent usable as a CI step:
 export GH_TOKEN=…   # read access to the tests repository
 thub run --type hw --label board:nucleo-f401re \
   --download-file "$IMAGE_URL" --env GH_TOKEN \
-  --command 'git clone --depth 1 --branch v1.4.0 "https://x-access-token:$GH_TOKEN@github.com/yourorg/firmware-tests.git" . &&
-             st-flash --serial "$THUB_DUT_STLINK" --reset write "$THUB_DOWNLOAD_1" 0x08000000 && ./ci/test.sh "$@"' \
+  --command 'git clone --depth 1 --branch v1.4.0 "https://x-access-token:$GH_TOKEN@github.com/yourorg/firmware-tests.git" src && cd src &&
+             st-flash --reset write "$THUB_DOWNLOAD_1" 0x08000000 && ./ci/test.sh "$@"' \
   --arg --junit --wait
 ```
 
@@ -147,7 +147,7 @@ The Client doesn't clone anything (and doesn't need git itself): the command doe
 ```bash
 export GH_TOKEN=…
 thub run --type sw --env GH_TOKEN,REF=main \
-  --command 'git clone --depth 1 --branch "$REF" "https://x-access-token:$GH_TOKEN@github.com/yourorg/tests.git" . && ./ci/test.sh' --wait
+  --command 'git clone --depth 1 --branch "$REF" "https://x-access-token:$GH_TOKEN@github.com/yourorg/tests.git" src && cd src && ./ci/test.sh' --wait
 ```
 
 For SSH, pass the private key itself as `--env` (base64) and use it via `GIT_SSH_COMMAND` from a file in the job directory, which is deleted with the job (main README, §7.2).
@@ -162,39 +162,45 @@ The Client doesn't pull images or start containers (and doesn't need Docker itse
 export DOCKER_PASSWORD=…
 thub run --type hw \
   --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USER=ci --env DOCKER_PASSWORD \
-  --command 'export DOCKER_CONFIG="$THUB_WORK_DIR/.docker" &&
-             echo "$DOCKER_PASSWORD" | docker login "$DOCKER_REGISTRY" --username "$DOCKER_USER" --password-stdin &&
+  --command 'echo "$DOCKER_PASSWORD" | docker login "$DOCKER_REGISTRY" --username "$DOCKER_USER" --password-stdin &&
              docker pull "$DOCKER_REGISTRY/team/test-runner:1.4"' \
   --wait
 ```
 
-**Run the command inside a container:** `--command` starts on the Client host in the work directory (`$THUB_WORK_DIR`). Clone into it, then start the container mounting it:
+**Run the command inside a container:** `--command` starts on the Client host in the job's directory (`$THUB_WORK_DIR`). Clone into `src/`, then start the container mounting only `src/` (the directory also holds `.docker/`, the job's registry login):
 
 ```bash
 thub run --type sw \
   --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USER=ci --env DOCKER_PASSWORD --env GH_TOKEN \
-  --command 'git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/yourorg/web-ui-tests.git" . &&
-             export DOCKER_CONFIG="$THUB_WORK_DIR/.docker" &&
+  --command 'git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/yourorg/web-ui-tests.git" src && cd src &&
              echo "$DOCKER_PASSWORD" | docker login "$DOCKER_REGISTRY" --username "$DOCKER_USER" --password-stdin &&
-             docker run --rm -v "$THUB_WORK_DIR:/work" -w /work "$DOCKER_REGISTRY/python:3.14" ./run-tests.sh' \
+             docker run --rm --user "$(id -u):$(id -g)" -v "$THUB_WORK_DIR/src:/work" -w /work "$DOCKER_REGISTRY/python:3.14" ./run-tests.sh' \
   --wait
 ```
 
-**Clone the repository inside the image, with parameters from `--env`:**
+**Clone and test inside a container, with a deploy key and a registry login from `--env`** (the reference example for passing data and secrets to a job):
 
 ```bash
+# In CI, from its secret store — never typed on the command line:
+export THUB_KEY=…                              # a CI token (dashboard → CI tokens)
+export DOCKER_PASSWORD=…                       # the registry password
+export GIT_KEY="$(cat ~/.ssh/thub_deploy)"     # a private deploy key with read access to the repository
+
 thub run --type sw \
-  --env DOCKER_REGISTRY=registry.lab.local:5000,DOCKER_USER=ci --env DOCKER_PASSWORD \
-  --env TEST_IMAGE=registry.lab.local:5000/team/test-runner:1.4 \
-  --env REPO_URL=git@bitbucket.org:yourorg/web-ui-tests.git,REPO_REF=main \
-  --env 'GIT_SSH_COMMAND=ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new' \
-  --command 'export DOCKER_CONFIG="$THUB_WORK_DIR/.docker" &&
-             echo "$DOCKER_PASSWORD" | docker login "$DOCKER_REGISTRY" --username "$DOCKER_USER" --password-stdin &&
-             docker run --rm -e REPO_URL -e REPO_REF -e GIT_SSH_COMMAND \
-               -v "$HOME/.ssh:/root/.ssh:ro" -v "$THUB_WORK_DIR/results:/results" \
-               "$TEST_IMAGE" sh -c "git clone --depth 1 --branch \"\$REPO_REF\" \"\$REPO_URL\" /src && cd /src && ./run-tests.sh --junit /results"' \
+  --env DOCKER_REGISTRY=registry.lab:5000,DOCKER_USERNAME=ci-reader \
+  --env DOCKER_PASSWORD --env GIT_KEY \
+  --command 'echo "$DOCKER_PASSWORD" | docker login "$DOCKER_REGISTRY" --username "$DOCKER_USERNAME" --password-stdin &&
+             mkdir -p "$THUB_WORK_DIR/src" &&
+             docker run --rm -e GIT_KEY -e HOME=/tmp --user "$(id -u):$(id -g)" \
+               -v "$THUB_WORK_DIR/src:/work" -w /work --entrypoint sh alpine/git -c "
+               eval \$(ssh-agent -s) > /dev/null &&
+               printf \"%s\n\" \"\$GIT_KEY\" | ssh-add - &&
+               GIT_SSH_COMMAND=\"ssh -o StrictHostKeyChecking=accept-new\" git clone --depth 1 git@bitbucket.org:yourorg/web-ui-tests.git . &&
+               ./run-tests.sh"' \
   --wait
 ```
+
+Plain values go as `--env NAME=value`, secrets as `--env NAME` (taken from your environment, so never on the command line; multi-line values arrive intact). The inner script's `\$` is expanded in the container; `ssh-agent` keeps the key in memory only; `--entrypoint sh` because `alpine/git`'s entrypoint is `git`; `--user` keeps the clone deletable by the Client. Only `src/` is mounted, so the registry login (the Client's `DOCKER_CONFIG`, `$THUB_WORK_DIR/.docker`) stays out of the container. More in the main README, §7.2.
 
 The Client host needs Docker and the Client's user in the `docker` group for these (install Docker before the Client). Add `--dry-run` to see every command a job would run on the Client (every `--env` value shown as `***`) without running any. More in the main README, §7.2.
 
@@ -202,8 +208,7 @@ The Client host needs Docker and the Client's user in the `docker` group for the
 
 On the Client, the job's `--command` gets every option above as a `JOB_<NAME>` variable (the **On the Client** column). A variable whose option wasn't given is unset. A repeatable option gives `<NAME>` with all values plus `<NAME>_<n>` for each one. It also gets:
 - its `--env` variables, under their own names;
-- `THUB_JOB_ID`, `THUB_WORK_DIR` (where it runs), `THUB_DOWNLOADS_DIR`, `THUB_DOWNLOADS`, `THUB_DOWNLOAD_<n>` (local paths), `THUB_SUITE` and `THUB_META_<KEY>`;
-- the DUT's `THUB_DUT_UART[_<n>]`, `THUB_DUT_USB[_<n>]`, `THUB_DUT_STLINK[_<n>]` (HW).
+- `THUB_JOB_ID`, `THUB_WORK_DIR` (where it runs), `THUB_DOWNLOADS_DIR`, `THUB_DOWNLOADS`, `THUB_DOWNLOAD_<n>` (local paths) and `THUB_META_<KEY>`. HW devices are used by their `/dev/thub/dut<N>-uart|usb|stlink` paths; no device variables are passed.
 
 `THUB_*` and `JOB_*` names can't be set with `--env`. The full list is in the main README, §7.4.
 
@@ -246,7 +251,7 @@ test-sw:
         npx -y @andrian.yablonskyy/thub-agent run --type sw \
           --download-file "${{ needs.build.outputs.image_url }}" \
           --env GH_TOKEN="${{ secrets.TESTS_READ_TOKEN }}",REPO="$GITHUB_REPOSITORY",SHA="$GITHUB_SHA" \
-          --command 'git init -q . && git fetch -q --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$REPO.git" "$SHA" &&
+          --command 'git init -q src && cd src && git fetch -q --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$REPO.git" "$SHA" &&
                      git checkout -q FETCH_HEAD && ./ci/sw-tests.sh' --suite full --wait
 ```
 

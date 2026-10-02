@@ -131,7 +131,7 @@ program
     '--command <string>',
     'The task\'s entry point: a shell command the Client runs (sh -c) in the job\'s work directory, after downloading ' +
       '--download-file files. --arg values arrive as "$@". Anything else the job needs it does itself — e.g. ' +
-      '`git clone "https://x-access-token:$GH_TOKEN@github.com/org/tests.git" . && ./ci/test.sh` or ' +
+      '`git clone "https://x-access-token:$GH_TOKEN@github.com/org/tests.git" src && cd src && ./ci/test.sh` or ' +
       '`docker run --rm "$IMAGE" ./run.sh` — with credentials passed by --env'
   )
   .option(
@@ -150,7 +150,7 @@ program
     collectRepeatable,
     []
   )
-  .option('--suite <name>', 'Test suite name, passed to --command as THUB_SUITE', 'default')
+  .option('--suite <name>', 'Test suite name, passed to --command as JOB_SUITE', 'default')
   .option('--arg <value>', 'Extra argument for --command, as "$@" (repeatable)', collectRepeatable, [])
   .option('--timeout <duration>', 'e.g. 30m, 1h', '30m')
   .option('--priority <n>', 'Priority 0-100', (v) => Number(v))
