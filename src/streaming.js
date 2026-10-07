@@ -21,7 +21,9 @@ const { exitCodeForJobState, EXIT_CODES } = require('@andrian.yablonskyy/thub-co
  * last seen `seq` on network drops (§7).
  *
  * In --wait mode (used by CI, §11) Ctrl-C/SIGINT is treated as a cancel
- * request; otherwise it only detaches and the job keeps running.
+ * request — and so is SIGTERM, which is how GitLab CI, Jenkins and most CI
+ * runners stop a canceled step; otherwise it only detaches and the job
+ * keeps running (SIGTERM then just ends the Agent, as before).
  */
 async function followJob(client, jobId, { fromSeq = 0, waitMode = false, print = console.log } = {}){
   let lastEventId = fromSeq,
@@ -60,6 +62,9 @@ async function followJob(client, jobId, { fromSeq = 0, waitMode = false, print =
   });
 
   process.on('SIGINT', onSigint);
+  if (waitMode){
+    process.on('SIGTERM', onSigint);
+  }
 
   (async () => {
     while (!finished){
@@ -107,6 +112,7 @@ async function followJob(client, jobId, { fromSeq = 0, waitMode = false, print =
   }
   finally {
     process.off('SIGINT', onSigint);
+    process.off('SIGTERM', onSigint);
     controller.abort();
   }
 }

@@ -280,7 +280,11 @@ while thub status "$JOB" --json > job.json; [ $? -eq 5 ]; do sleep 10; done
 jq -r '"\(.state) exit=\(.exit_code) failed=\(.summary.failed // 0)"' job.json   # PASSED exit=0 failed=0
 ```
 
-## GitHub Actions
+## CI/CD: GitHub Actions, GitLab, Bitbucket, Jenkins
+
+Every CI system works the same way: store a CI token (dashboard → CI tokens) as the secret `THUB_KEY`, set `THUB_URL`, and run `thub run … --wait` on a runner with Node.js 24. The step's exit code is the verdict. Set `THUB_NO_SELF_UPDATE=1` on short-lived runners.
+
+### GitHub Actions
 
 ```yaml
 test-sw:
@@ -298,7 +302,72 @@ test-sw:
                      git checkout -q FETCH_HEAD && ./ci/sw-tests.sh' --suite full --wait
 ```
 
-If the GitHub job is canceled, the runner sends `SIGINT` to the Agent. In `--wait` mode (CI), that's treated as a cancel request (`POST /jobs/:id/cancel`) before exiting, so abandoned CI jobs don't hold hardware. In interactive mode, Ctrl-C only detaches.
+In `--wait` mode, `SIGINT` and `SIGTERM` (how GitHub, GitLab and Jenkins stop a canceled step) make the Agent cancel the job (`POST /jobs/:id/cancel`) before exiting, so abandoned CI jobs don't hold hardware. In interactive mode, Ctrl-C only detaches.
+
+### GitLab CI/CD
+
+```yaml
+test-hw:
+  image: node:24
+  variables: { THUB_URL: https://thub.example.com, THUB_NO_SELF_UPDATE: "1" }   # THUB_KEY: a masked CI/CD variable
+  script:
+    - |
+      npx -y @andrian.yablonskyy/thub-agent run --type hw --label board:nucleo-f401re --download-file "$IMAGE_URL" \
+        --env CI_JOB_TOKEN --env CI_SERVER_HOST --env CI_PROJECT_PATH --env CI_COMMIT_SHA \
+        --command 'git init -q src && cd src &&
+                   git fetch -q --depth 1 "https://gitlab-ci-token:$CI_JOB_TOKEN@$CI_SERVER_HOST/$CI_PROJECT_PATH.git" "$CI_COMMIT_SHA" &&
+                   git checkout -q FETCH_HEAD && ./ci/hw-tests.sh' \
+        --wait --meta pipelineUrl="$CI_PIPELINE_URL"
+```
+
+### Bitbucket Pipelines
+
+```yaml
+- step:
+    name: HW tests
+    image: node:24
+    script:   # repository variables: THUB_URL, THUB_KEY (secured), TESTS_TOKEN (a repository access token)
+      - >-
+        npx -y @andrian.yablonskyy/thub-agent run --type hw --download-file "$IMAGE_URL"
+        --env TESTS_TOKEN --env BITBUCKET_REPO_FULL_NAME --env BITBUCKET_COMMIT
+        --command 'git init -q src && cd src &&
+        git fetch -q --depth 1 "https://x-token-auth:$TESTS_TOKEN@bitbucket.org/$BITBUCKET_REPO_FULL_NAME.git" "$BITBUCKET_COMMIT" &&
+        git checkout -q FETCH_HEAD && ./ci/hw-tests.sh' --wait
+```
+
+### Jenkins
+
+```groovy
+stage('HW tests') {
+  agent { docker { image 'node:24' } }
+  environment {
+    THUB_URL = 'https://thub.example.com'
+    THUB_KEY = credentials('thub-ci-token')          // Secret text
+    NPM_CONFIG_CACHE = "${env.WORKSPACE}/.npm"
+  }
+  steps {
+    sh '''
+      npx -y @andrian.yablonskyy/thub-agent run --type hw --download-file "$IMAGE_URL" \
+        --command './ci/hw-tests.sh' --wait --meta buildUrl="$BUILD_URL"
+    '''
+  }
+}
+```
+
+Full pipelines — build, test, and bringing the JUnit report back into GitLab, Bitbucket or Jenkins — are in the main README, §11, and in the dashboard's Help.
+
+## Artifact storage
+
+`--download-file` is a plain, anonymous GET. For private storage, either pass a short-lived signed URL (`aws s3 presign …`), or fetch the file in `--command` with credentials passed as `--env`. Outputs are uploaded by the command and listed in `$THUB_ARTIFACTS_FILE`:
+
+```bash
+thub run --type sw --env ART_TOKEN \
+  --command './ci/test.sh; rc=$?
+             curl -fsS -H "Authorization: Bearer $ART_TOKEN" -T results/junit.xml "https://artifactory.example.com/qa/$THUB_JOB_ID/junit.xml"
+             exit $rc' --wait
+```
+
+The main README, §7.5, and the dashboard's Help have examples for Artifactory, AWS S3, Google Drive (rclone), FTP/FTPS/SFTP, and custom HTTP authentication (bearer, API key, basic, `.netrc`, mutual TLS, OAuth2).
 
 ## Development
 
