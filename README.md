@@ -102,6 +102,24 @@ thub power off M-00131
 [runner] USB power reset: 1-1.4:3 (off 3 s)
 ```
 
+### Smart sockets, PDUs and other lab devices
+
+Boards on a smart socket (Shelly, Tasmota, Kasa, Home Assistant) or a PDU outlet are switched by the job itself. Its `--command`, or a script from the repository it clones, calls the device with `curl`, `snmpset` or the device's own CLI, with credentials passed as `--env`. Each Client instance names its bench's device in its environment (e.g. `BENCH_POWER=shelly:10.0.20.11`, set with a systemd drop-in):
+
+```bash
+# inline: Shelly Gen2 off, 2 s, on, then the tests
+thub run --type hw --label board:nucleo-f401re --env SHELLY_PASSWORD \
+  --command 'S="http://$BENCH_IP/rpc/Switch.Set?id=0"
+             curl -fsS --digest -u "admin:$SHELLY_PASSWORD" "$S&on=false" && sleep 2 &&
+             curl -fsS --digest -u "admin:$SHELLY_PASSWORD" "$S&on=true" && ./ci/test.sh' --wait
+
+# from the test repository: ci/run.sh resets the bench's socket or PDU outlet, tests, and always powers it off
+thub run --type hw --env GH_TOKEN --env POWER_PASSWORD \
+  --command 'git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/yourorg/firmware-tests.git" src && cd src && exec ci/run.sh' --wait
+```
+
+Use `exec` so a canceled job's `SIGTERM` reaches the script's trap. The full `ci/power.sh` and `ci/run.sh` examples (Shelly, Tasmota, Home Assistant, Kasa, APC PDU over SNMP) are in the main README, §8.8, and in the dashboard's Help.
+
 ## Examples
 
 **Run a task** — download the firmware, clone the tests at a tag, flash and test (HW):
