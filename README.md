@@ -369,6 +369,13 @@ thub run --type sw --env ART_TOKEN \
 
 The main README, §7.5, and the dashboard's Help have examples for Artifactory, AWS S3, Google Drive (rclone), FTP/FTPS/SFTP, and custom HTTP authentication (bearer, API key, basic, `.netrc`, mutual TLS, OAuth2).
 
+More authentication how-tos, in the main README and the dashboard's Help:
+
+- **Downloads over HTTPS:** a private CA (`NODE_EXTRA_CA_CERTS` on the Client), and client certificates (`curl --cert` in `--command`; `--download-file` can't present one). See §7.5.
+- **Artifactory:** scoped, short-lived access tokens minted per CI run, the JFrog CLI, and signed URLs. See §7.5.
+- **git over SSH:** a deploy key plus a pinned `known_hosts`, both passed with `--env`. See §7.2.
+- **`docker login`:** your own registry, Artifactory, ghcr, GitLab, Docker Hub, ECR, Google Artifact Registry and ACR. See §7.2.
+
 ## Development
 
 ```bash
