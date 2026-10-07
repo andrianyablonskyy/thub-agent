@@ -32,6 +32,7 @@ thub key rotate                   # a new key; the old one stops at once (saved 
 thub run      [options]        Submit a test job and follow its log
 thub status   <jobId>          Show status; follow log if running, verdict, test counts and artifacts if done
 thub cancel   <jobId>          Cancel a job
+thub power    on|off|reset <jobId> [--delay <sec>] [--port <n>]   Switch the USB power of the Client running your job (owner only)
 thub resources                 List resources and their status
 thub jobs     [--mine] [--state <s>]   List recent jobs (a cli token: only its own; a ci token: all, or its own with --mine)
 thub config   set <key> <value>        Save coordinator URL / key / default user locally
@@ -58,6 +59,9 @@ Key options for `thub run`. **On the Client** names the environment variable the
 | `--priority <n>` | 0–100; CI defaults to 50, CLI to 60 so a developer is not starved by a busy pipeline. | `JOB_PRIORITY` |
 | `--meta <key=value>` | Arbitrary metadata stored on the job (repeatable) — CI job ids, git coordinates, anything else worth attaching to the run. | `JOB_META_<KEY>` (also `THUB_META_<KEY>`) |
 | `--dry-run` | Exercise the full pipeline without the Client executing anything for real. | — (the command doesn't run) |
+| `--power-on-start on\|off\|reset` | HW only: switch the Client's USB power ports (uhubctl) before the DUT is prepared; a failure ends the job in `ERROR`. | `JOB_POWER_ON_START` |
+| `--power-on-end on\|off\|reset` | HW only: switch them when the job ends, whatever its verdict. | `JOB_POWER_ON_END` |
+| `--power-reset-delay <sec>` | How long a `reset` keeps the power off, 0–60 s; default `1`. | `JOB_POWER_RESET_DELAY` |
 | `--wait` | Do not detach on job end; exit with the job's verdict code (used in CI). | — (Agent only) |
 | `--detach` | Print the job id and exit immediately. | — (Agent only) |
 | `--json` | Machine-readable output. | — (Agent only) |
@@ -76,6 +80,27 @@ Exit codes make the Agent usable as a CI step:
 | `4` | Usage, auth or connection error |
 | `5` | `thub status <jobId> --json`: the job is still queued or running |
 | `130` | Detached with Ctrl-C (job still running) |
+
+### USB port power (HW)
+
+On a Client with USB power ports (uhubctl, see the main README §8.7), a job can cold-boot its board and switch it off at the end. Its owner can also power-cycle it while it runs, without canceling the job:
+
+```bash
+thub run --type hw --label board:nucleo-f401re \
+  --download-file "$IMAGE_URL" --command './ci/flash-and-test.sh' \
+  --power-on-start reset --power-reset-delay 2 --power-on-end off --wait
+
+thub power reset M-00131                      # every port, 1 s off (the default delay)
+thub power reset M-00131 --port 2 --delay 3   # the Client's second port, 3 s off
+thub power off M-00131
+```
+
+`thub power` works only for your own job, while it's `PREPARING` or `RUNNING`; otherwise the Coordinator says why it refused. The job's log shows each action:
+
+```
+[runner] USB power reset (port 2) requested by alice (thub power)
+[runner] USB power reset: 1-1.4:3 (off 3 s)
+```
 
 ## Examples
 

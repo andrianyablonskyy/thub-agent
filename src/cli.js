@@ -2,7 +2,7 @@
 
 /**
  * @file        packages/agent/src/cli.js
- * @description thub CLI entry point: run/status/cancel/resources/jobs/config commands (README §7)
+ * @description thub CLI entry point: run/status/cancel/power/resources/jobs/config commands (README §7)
  *
  * @author      Andrian Yablonskyy
  * @copyright   Copyright (c) 2026 Andrian Yablonskyy. All rights reserved.
@@ -18,7 +18,7 @@
 const { Command, Option } = require('commander'),
   {
     ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime,
-    parseEnvList
+    parseEnvList, POWER_ACTIONS, DEFAULT_RESET_DELAY_SEC, MAX_RESET_DELAY_SEC, powerRequestErrors
   } = require('@andrian.yablonskyy/thub-common'),
   { resolveConnection, writeConfigFile, readConfigFile, CONFIG_PATH } = require('./config'),
   { parseDurationSec } = require('./duration'),
@@ -79,6 +79,34 @@ function taskFromOptions(opts){
     task.env = env;
   }
   return task;
+}
+
+// --power-on-start / --power-on-end / --power-reset-delay -> the job spec's
+// `power` (README §8.7), checked here so a typo fails before it's sent.
+function powerFromOptions(opts){
+  const power = {};
+  for (const [option, key]of [['powerOnStart', 'onStart'], ['powerOnEnd', 'onEnd']]){
+    if (opts[option] !== undefined){
+      if (!POWER_ACTIONS.includes(opts[option])){
+        throw usageError(`--${option.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} ${opts[option]}: must be one of ${POWER_ACTIONS.join(', ')}`);
+      }
+      power[key] = opts[option];
+    }
+  }
+  if (opts.powerResetDelay !== undefined){
+    const errors = powerRequestErrors({ action: 'reset', delaySec: opts.powerResetDelay });
+    if (errors.length){
+      throw usageError(`--power-reset-delay: ${errors.join('; ')}`);
+    }
+    if (power.onStart !== 'reset' && power.onEnd !== 'reset'){
+      throw usageError('--power-reset-delay needs --power-on-start reset or --power-on-end reset');
+    }
+    power.resetDelaySec = opts.powerResetDelay;
+  }
+  if (Object.keys(power).length && opts.type !== 'hw'){
+    throw usageError('--power-on-start / --power-on-end are for HW jobs only (--type hw)');
+  }
+  return Object.keys(power).length ? power : null;
 }
 
 function usageError(message){
@@ -170,9 +198,13 @@ program
       'without the Client flashing/running anything for real',
     false
   )
+  .option('--power-on-start <action>', `USB power on the Client (uhubctl) before the DUT is prepared: ${POWER_ACTIONS.join(' | ')} (HW only)`)
+  .option('--power-on-end <action>', `USB power on the Client when the job ends, whatever its verdict: ${POWER_ACTIONS.join(' | ')} (HW only)`)
+  .option('--power-reset-delay <sec>', `Seconds a reset keeps the power off (default ${DEFAULT_RESET_DELAY_SEC}, max ${MAX_RESET_DELAY_SEC})`, (v) => Number(v))
   .action(async (opts) => {
     try {
       const task = taskFromOptions(opts),
+        power = powerFromOptions(opts),
         c = client(),
         labels = requiredLabels(opts),
         meta = Object.fromEntries(opts.meta.map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
@@ -184,7 +216,8 @@ program
           timeoutSec: parseDurationSec(opts.timeout),
           ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
           ...(Object.keys(meta).length ? { meta } : {}),
-          ...(opts.dryRun ? { dryRun: true } : {})
+          ...(opts.dryRun ? { dryRun: true } : {}),
+          ...(power ? { power } : {})
         },
 
         result = await c.post('/jobs', spec);
@@ -261,6 +294,36 @@ program
     try {
       const job = await client().post(`/jobs/${jobId}/cancel`);
       console.log(`Job ${job.id} -> ${job.state}`);
+    }
+    catch (err){
+      fail(err);
+    }
+  });
+
+// README §8.7: the owner of a running job switches its Client's USB power
+// right away — no need to wait for the job to end or to cancel it.
+program
+  .command('power')
+  .description('Switch the USB power of the Client running your job (uhubctl): on, off or reset — while it runs')
+  .argument('<action>', POWER_ACTIONS.join(' | '))
+  .argument('<jobId>')
+  .option('--delay <sec>', `reset: seconds the power stays off (default ${DEFAULT_RESET_DELAY_SEC}, max ${MAX_RESET_DELAY_SEC})`, (v) => Number(v))
+  .option('--port <n>', 'Only this port of the Client: its number in the Client\'s hw-devices.usbPower.ports (default: all of them)', (v) => Number(v))
+  .option('--json', 'Machine-readable output', false)
+  .action(async (action, jobId, opts) => {
+    try {
+      const errors = powerRequestErrors({ action, delaySec: opts.delay, port: opts.port });
+      if (errors.length){
+        throw usageError(errors.join('; ').replace('the reset delay (delaySec)', '--delay').replace(/^port/, '--port'));
+      }
+      const res = await client().post(`/jobs/${jobId}/power`, {
+        action, ...(opts.delay !== undefined ? { delaySec: opts.delay } : {}), ...(opts.port !== undefined ? { port: opts.port } : {})
+      });
+      if (opts.json){
+        return console.log(JSON.stringify(res));
+      }
+      const what = `USB power ${res.action}${res.port ? ` (port ${res.port})` : ''}${res.action === 'reset' ? `, ${res.delaySec} s off` : ''}`;
+      console.log(`${what} sent to ${res.resource.name} for job ${res.jobId} — the job's log shows when it's done.`);
     }
     catch (err){
       fail(err);
