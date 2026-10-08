@@ -2,7 +2,7 @@
 
 /**
  * @file        packages/agent/src/cli.js
- * @description thub CLI entry point: run/status/cancel/power/resources/jobs/config commands (README §7)
+ * @description thub CLI entry point: run/status/cancel/power/report/resources/jobs/config commands (README §7)
  *
  * @author      Andrian Yablonskyy
  * @copyright   Copyright (c) 2026 Andrian Yablonskyy. All rights reserved.
@@ -23,7 +23,9 @@ const { Command, Option } = require('commander'),
   { resolveConnection, writeConfigFile, readConfigFile, CONFIG_PATH } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming'),
-  { applyRequestedUpdate, installAgent, version } = require('./self-update');
+  { applyRequestedUpdate, installAgent, version } = require('./self-update'),
+  { report } = require('./report'),
+  fs = require('node:fs');
 
 const program = new Command();
 program
@@ -200,6 +202,7 @@ program
   )
   .option('--power-on-start <action>', `USB power on the Client (uhubctl) before the DUT is prepared: ${POWER_ACTIONS.join(' | ')} (HW only)`)
   .option('--power-on-end <action>', `USB power on the Client when the job ends, whatever its verdict: ${POWER_ACTIONS.join(' | ')} (HW only)`)
+  .option('--id-file <path>', 'Write the job id to this file as soon as it\'s queued (for a later `thub report`, §11.5)')
   .option('--power-reset-delay <sec>', `Seconds a reset keeps the power off (default ${DEFAULT_RESET_DELAY_SEC}, max ${MAX_RESET_DELAY_SEC})`, (v) => Number(v))
   .action(async (opts) => {
     try {
@@ -221,6 +224,9 @@ program
         },
 
         result = await c.post('/jobs', spec);
+      if (opts.idFile){
+        fs.writeFileSync(opts.idFile, `${result.jobId}\n`);
+      }
       if (opts.json){
         console.log(JSON.stringify(result));
       }
@@ -324,6 +330,39 @@ program
       }
       const what = `USB power ${res.action}${res.port ? ` (port ${res.port})` : ''}${res.action === 'reset' ? `, ${res.delaySec} s off` : ''}`;
       console.log(`${what} sent to ${res.resource.name} for job ${res.jobId} — the job's log shows when it's done.`);
+    }
+    catch (err){
+      fail(err);
+    }
+  });
+
+// §11.5: the job as Markdown, or posted where its code is reviewed — the
+// same report the GitHub Action leaves, from any CI.
+program
+  .command('report')
+  .description('A job\'s report as Markdown, or a sticky comment on a GitLab merge request / Bitbucket or GitHub pull request')
+  .argument('<jobId>', 'The job, e.g. A-00042 (thub run --id-file saves it)')
+  .option('--post <platform>', 'Comment on the merge/pull request of this pipeline: gitlab, bitbucket or github (from the CI\'s own variables)')
+  .option('--commit-status', 'With --post: also set a commit status (GitLab) / build status (Bitbucket) / status (GitHub) linking to the job', false)
+  .option('--title <text>', 'A title in the heading, e.g. "HW smoke (nucleo-f401re)"')
+  .option('--key <text>', 'What identifies the comment, so the next run updates it (default: the CI job name and --title)')
+  .option('--pr <number>', 'The merge/pull request, when the pipeline doesn\'t say (a branch pipeline)')
+  .option('--commit <sha>', 'The commit to report on and set the status of (default: the pipeline\'s)')
+  .option('--run-url <url>', 'A link back to the CI run (default: the pipeline\'s)')
+  .option('--run-label <text>', 'Its label (default: Pipeline / Workflow run)')
+  .option('--flavor <platform>', 'Without --post: Markdown for github (default), gitlab or bitbucket (no HTML)')
+  .option('--summary', 'The full report (every test, artifacts) instead of the comment', false)
+  .option('--artifact-header <header>', 'A "Name: value" header for fetching the JUnit XML the job listed as artifacts (repeatable)', collectRepeatable, [])
+  .option('--no-junit', 'Don\'t fetch the JUnit XML artifacts (counts only)')
+  .option('--output <file>', 'Write the Markdown to this file (default: print it, unless --post)')
+  .option('--exit-code', 'Exit with the job\'s verdict code (0 PASSED, 1 FAILED, …) instead of 0', false)
+  .action(async (jobId, opts) => {
+    try {
+      const { url } = resolveConnection(program.opts()),
+        { job } = await report(client(), url, jobId, opts);
+      if (opts.exitCode){
+        process.exit(ACTIVE_JOB_STATES.has(job.state) ? EXIT_CODES.ACTIVE : exitCodeForJobState(job.state));
+      }
     }
     catch (err){
       fail(err);

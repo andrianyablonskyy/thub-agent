@@ -33,6 +33,7 @@ thub run      [options]        Submit a test job and follow its log
 thub status   <jobId>          Show status; follow log if running, verdict, test counts and artifacts if done
 thub cancel   <jobId>          Cancel a job
 thub power    on|off|reset <jobId> [--delay <sec>] [--port <n>]   Switch the USB power of the Client running your job (owner only)
+thub report   <jobId> [--post gitlab|bitbucket|github] [--commit-status]   The job's report, or a sticky MR/PR comment
 thub resources                 List resources and their status
 thub jobs     [--mine] [--state <s>]   List recent jobs (a cli token: only its own; a ci token: all, or its own with --mine)
 thub config   set <key> <value>        Save coordinator URL / key / default user locally
@@ -59,6 +60,7 @@ Key options for `thub run`. **On the Client** names the environment variable the
 | `--priority <n>` | 0–100; CI defaults to 50, CLI to 60 so a developer is not starved by a busy pipeline. | `JOB_PRIORITY` |
 | `--meta <key=value>` | Arbitrary metadata stored on the job (repeatable) — CI job ids, git coordinates, anything else worth attaching to the run. | `JOB_META_<KEY>` (also `THUB_META_<KEY>`) |
 | `--dry-run` | Exercise the full pipeline without the Client executing anything for real. | — (the command doesn't run) |
+| `--id-file <path>` | Write the job id to this file as soon as it's queued, for a later `thub report`. | — (Agent only) |
 | `--power-on-start on\|off\|reset` | HW only: switch the Client's USB power ports (uhubctl) before the DUT is prepared; a failure ends the job in `ERROR`. | `JOB_POWER_ON_START` |
 | `--power-on-end on\|off\|reset` | HW only: switch them when the job ends, whatever its verdict. | `JOB_POWER_ON_END` |
 | `--power-reset-delay <sec>` | How long a `reset` keeps the power off, 0–60 s; default `1`. | `JOB_POWER_RESET_DELAY` |
@@ -286,6 +288,69 @@ Every CI system works the same way: store a CI token (dashboard → CI tokens) a
 
 ### GitHub Actions
 
+The TestHub action does it in one step: the job's log in the step, a Job Summary with every test, a pull-request comment (verdict, board, time, log link; updated in place on re-runs) and an optional commit status:
+
+```yaml
+- uses: andrianyablonskyy/thub-action@v1
+  with:
+    url: https://thub.example.com
+    key: ${{ secrets.THUB_CI_TOKEN }}
+    type: hw
+    labels: board:nucleo-f401re
+    download-files: ${{ needs.build.outputs.image_url }}
+    command: st-flash --reset write "$THUB_DOWNLOAD_1" 0x08000000 && ./ci/hw-tests.sh
+```
+
+The PR comment it leaves:
+
+```
+### ❌ TestHub HW smoke: FAILED
+| Job      | A-00042                                   |
+| Result   | FAILED (exit code 1)                      |
+| Board    | nucleo-f401re on lab-hw-01                |
+| Tests    | 42 total · 40 passed · 2 failed · 0 skipped |
+| Duration | 3m 12s (queued 20s)                       |
+| Commit   | abcdef1                                   |
+| Links    | Job page and full log · Workflow run      |
+▸ Failed tests (2)
+```
+
+Use its outputs in later steps:
+
+```yaml
+      - id: thub
+        uses: andrianyablonskyy/thub-action@v1
+        with:
+          url: https://thub.example.com
+          key: ${{ secrets.THUB_CI_TOKEN }}
+          type: hw
+          labels: board:nucleo-f401re
+          command: ./ci/hw-tests.sh
+      - if: always() && steps.thub.outputs.job-id
+        run: |
+          echo "TestHub ${{ steps.thub.outputs.job-id }} on ${{ steps.thub.outputs.client }}: ${{ steps.thub.outputs.state }}"
+          echo "${{ steps.thub.outputs.passed }}/${{ steps.thub.outputs.total }} tests passed in ${{ steps.thub.outputs.duration-sec }} s"
+          echo "Log: ${{ steps.thub.outputs.job-url }}"
+```
+
+Report only, quietly, with the verdict as a commit status:
+
+```yaml
+      - uses: andrianyablonskyy/thub-action@v1
+        with:
+          url: https://thub.example.com
+          key: ${{ secrets.THUB_CI_TOKEN }}
+          type: sw
+          command: ./ci/sw-tests.sh
+          fail: false
+          comment: on-failure
+          commit-status: true
+```
+
+Complete workflows, every input, and how the PR comment and test table work are in `packages/action/README.md` and the main README §11.1.
+
+With the Agent directly:
+
 ```yaml
 test-sw:
   needs: build
@@ -355,6 +420,54 @@ stage('HW tests') {
 ```
 
 Full pipelines — build, test, and bringing the JUnit report back into GitLab, Bitbucket or Jenkins — are in the main README, §11, and in the dashboard's Help.
+
+### Merge/pull-request comments: GitLab, Bitbucket, Jenkins
+
+`thub report <jobId>` renders the same report the GitHub Action leaves: verdict, board, Client, duration, tests, failed tests, and links to the job's log and the pipeline. `--post gitlab|bitbucket|github` keeps it as one comment on the merge/pull request, updated by every later run, and `--commit-status` sets the commit's status, linking to the job. Save the id with `thub run --id-file`, and report in the step that runs whatever the result.
+
+GitLab, with a project access token (`api` scope, Reporter) in the masked variable `GITLAB_TOKEN`:
+
+```yaml
+# .gitlab-ci.yml
+test-hw:
+  stage: test
+  image: node:24
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"     # CI_MERGE_REQUEST_IID: the MR to comment on
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH            # status only (a branch pipeline's open MR, if any, is found by commit)
+  variables:
+    THUB_URL: https://thub.example.com                       # THUB_KEY, GITLAB_TOKEN: masked CI/CD variables
+    THUB_NO_SELF_UPDATE: "1"
+  before_script:
+    - npm i -g @andrian.yablonskyy/thub-agent
+  script:
+    - thub run --type hw --label board:nucleo-f401re --download-file "$IMAGE_URL"
+        --command './ci/hw-tests.sh' --suite smoke --timeout 30m --wait --id-file .thub-job
+        --meta pipelineUrl="$CI_PIPELINE_URL"
+  after_script:                                              # runs after failures and cancels too
+    - '[ -s .thub-job ] && thub report "$(cat .thub-job)" --post gitlab --commit-status --title "HW smoke"'
+```
+
+Bitbucket Cloud, with a repository access token (Pull requests: Write) in the secured variable `BITBUCKET_TOKEN`:
+
+```yaml
+# bitbucket-pipelines.yml
+image: node:24
+pipelines:
+  pull-requests:
+    '**':
+      - step:
+          name: HW tests
+          max-time: 60
+          script:                                            # THUB_URL, THUB_KEY, BITBUCKET_TOKEN: repository variables
+            - export THUB_NO_SELF_UPDATE=1
+            - npm i -g @andrian.yablonskyy/thub-agent
+            - thub run --type hw --label board:nucleo-f401re --command './ci/hw-tests.sh' --suite smoke --timeout 30m --wait --id-file .thub-job
+          after-script:                                      # runs whether the step passed or failed
+            - '[ -s .thub-job ] && thub report "$(cat .thub-job)" --post bitbucket --commit-status --title "HW smoke"'
+```
+
+Jenkins, Bitbucket Data Center, every `thub report` option, and which CI variables each code host reads: main README, §11.5.
 
 ## Artifact storage
 

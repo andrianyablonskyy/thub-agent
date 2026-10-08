@@ -9,6 +9,7 @@
   },
   "main": "src/cli.js",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "postinstall": "node scripts/install-default-config.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
