@@ -22,3 +22,4 @@ Changes since 1.1.6.
 ### Docs
 
 - README: CI/CD for GitHub Actions (with the TestHub action), GitLab, Bitbucket and Jenkins; merge/pull-request comments; test frameworks (GoogleTest, CTest, pytest, JUnit) and their results in the PR comment; artifact storage and authentication (Artifactory, S3, Google Drive, SFTP, certificates); the license is now `LICENSE.md` (`"license"` and `"author"` set in `package.json`).
+- These release notes (`RELEASE.md`) are now part of the package.
