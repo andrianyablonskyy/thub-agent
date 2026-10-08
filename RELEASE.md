@@ -2,6 +2,14 @@
 
 What changed in each release, newest first. `## Unreleased` collects the changes since the version on npm; `bin/publish` turns that heading into the version and date it releases.
 
+## 1.1.8 — 2026-10-08
+
+Changes since 1.1.7.
+
+### Requires
+
+- `@andrian.yablonskyy/thub-common` 1.1.7 or later, released with this version (Client device lists of up to 16 entries, the UART `label`). The Agent itself works as in 1.1.7: nothing in its commands or output changed.
+
 ## 1.1.7 — 2026-10-08
 
 Changes since 1.1.6.
