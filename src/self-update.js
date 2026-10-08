@@ -15,7 +15,7 @@
 'use strict';
 
 const { spawnSync } = require('node:child_process'),
-  { PACKAGES, isNewer, npmBin, npmInstallGlobal } = require('@andrian.yablonskyy/thub-common'),
+  { PACKAGES, NPM_INSTALL_ARGS, isNewer, npmBin, npmInstallGlobal, installSpec, installCommand } = require('@andrian.yablonskyy/thub-common'),
   { version } = require('../package.json');
 
 // npm's output goes to stderr so a command's own stdout (e.g. JSON a CI
@@ -23,17 +23,18 @@ const { spawnSync } = require('node:child_process'),
 const NPM_STDIO = ['inherit', 2, 2],
   CHECK_TIMEOUT_MS = 5000;
 
-// Tries a plain `npm i -g` first (nvm, a user-owned prefix, or root in
-// CI); if that fails on an interactive terminal, retries through sudo
-// for a system-wide install. Never throws — returns whether it worked.
+// Installs that release from the Agent's (public) git repository: a plain
+// `npm i -g` first (nvm, a user-owned prefix, or root in CI); if that fails
+// on an interactive terminal, retries through sudo for a system-wide
+// install. Never throws — returns whether it worked.
 function installAgent(target){
   try {
-    if (npmInstallGlobal(PACKAGES.agent, target, { stdio: NPM_STDIO, retryDelaysSec: [] }) === 0){
+    if (npmInstallGlobal(PACKAGES.agent, target, { stdio: NPM_STDIO }) === 0){
       return true;
     }
     if (process.getuid?.() !== 0 && process.stdin.isTTY){
       console.error('thub: retrying with sudo');
-      return spawnSync('sudo', [npmBin(), 'i', '-g', '--prefer-online', `${PACKAGES.agent}@${target}`], { stdio: NPM_STDIO }).status === 0;
+      return spawnSync('sudo', [npmBin(), ...NPM_INSTALL_ARGS, installSpec(PACKAGES.agent, target)], { stdio: NPM_STDIO }).status === 0;
     }
   }
   catch (err){
@@ -64,7 +65,7 @@ async function applyRequestedUpdate(api){
 
   console.error(`thub: updating v${version} -> v${updateTo} (requested by the Coordinator)`);
   if (!installAgent(updateTo)){
-    console.error(`thub: update failed — continuing on v${version}. To update by hand: sudo npm i -g ${PACKAGES.agent}@${updateTo}`);
+    console.error(`thub: update failed — continuing on v${version}. To update by hand: ${installCommand(PACKAGES.agent, updateTo)}`);
     return;
   }
   const rerun = spawnSync(process.execPath, process.argv.slice(1), {

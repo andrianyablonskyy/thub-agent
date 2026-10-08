@@ -2,6 +2,19 @@
 
 What changed in each release, newest first. `## Unreleased` collects the changes since the version on npm; `bin/publish` turns that heading into the version and date it releases.
 
+## Unreleased
+
+Changes since 1.1.11.
+
+### Changed
+
+- **Updates come from the Agent's git repository.** `thub check-update` reads its newest release tag. `thub self-update` and an update requested on the dashboard install with `npm i -g --install-links git+https://github.com/andrianyablonskyy/thub-agent.git#vX.Y.Z`, retrying with sudo on a terminal.
+- **Install:** `npm i -g --install-links git+https://github.com/andrianyablonskyy/thub-agent.git`, or in CI `npx -y --package='git+https://github.com/andrianyablonskyy/thub-agent.git#semver:*' thub …`.
+
+### Upgrading from npm
+
+- An Agent installed from npm (1.1.10 or older) can only update from npm, where nothing new comes: reinstall it once from git with the command above.
+
 ## 1.1.11 — 2026-10-08
 
 Changes since 1.1.11.
