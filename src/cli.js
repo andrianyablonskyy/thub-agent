@@ -126,7 +126,7 @@ function fail(err){
     }
     catch { /* keep the generic wording */ }
     console.error(`Hint: the Coordinator at ${url} doesn't know an option ` +
-      `this Agent (v${version}) sent — update the Coordinator (dashboard → Update app, or npm i -g @andrian.yablonskyy/thub-coordinator@latest).`);
+      `this Agent (v${version}) sent — update the Coordinator (dashboard → Update app, or on its host: thub-admin self-update).`);
   }
   process.exit(err.status && Number.isInteger(err.status) && err.status < 100 ? err.status : EXIT_CODES.USAGE);
 }

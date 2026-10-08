@@ -2,6 +2,14 @@
 
 What changed in each release, newest first. `## Unreleased` collects the changes since the version on npm; `bin/publish` turns that heading into the version and date it releases.
 
+## Unreleased
+
+Changes since 1.1.10.
+
+### Changed
+
+- When the Coordinator rejects an option this Agent sent (it's older), the hint says to update it with **Update app** on the dashboard or `thub-admin self-update` on its host. The Coordinator isn't on npm any more.
+
 ## 1.1.8 — 2026-10-08
 
 Changes since 1.1.7.
