@@ -469,6 +469,19 @@ pipelines:
 
 Jenkins, Bitbucket Data Center, every `thub report` option, and which CI variables each code host reads: main README, §11.5.
 
+## Test frameworks and the PR comment
+
+The verdict is the command's exit code. Test counts come from JUnit XML the command writes to `results/` (or `artifacts/`, either one folder down too):
+
+```bash
+--command '… ./build/uart_tests --gtest_output=xml:results/ …'                          # GoogleTest
+--command '… ctest --test-dir build --output-junit "$PWD/results/ctest.xml" …'          # CTest (absolute path)
+--command '… pytest tests/ --junitxml=results/pytest.xml -o junit_family=xunit2 …'      # pytest
+--command '… mvn -B test; rc=$?; mkdir -p results && cp target/surefire-reports/TEST-*.xml results/; exit $rc'   # JUnit / Maven
+```
+
+To have **every test case** in the PR/MR comment, have the command publish the XML and list it as an artifact (`ci/publish-junit.sh`). The GitHub Action or `thub report --artifact-header …` then fetches it. Full examples, including hardware-in-the-loop with pytest: main README §7.6.
+
 ## Artifact storage
 
 `--download-file` is a plain, anonymous GET. For private storage, either pass a short-lived signed URL (`aws s3 presign …`), or fetch the file in `--command` with credentials passed as `--env`. Outputs are uploaded by the command and listed in `$THUB_ARTIFACTS_FILE`:
