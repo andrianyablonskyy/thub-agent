@@ -1,8 +1,8 @@
 # @andrian.yablonskyy/thub-agent
 
-The Agent CLI (`thub`) for [TestHub](https://github.com/andrianyablonskyy/thub) — a self-hosted job network that lets CI/CD pipelines and individual developers run firmware tests on real hardware or emulators in a private lab. `thub` is the single entry point for both: it's stateless, everything it knows comes from the [Coordinator](https://github.com/andrianyablonskyy/thub-coordinator) API, and it runs identically on a GitHub-hosted runner and a developer laptop — a developer reproducing a CI failure runs exactly the same command the pipeline runs.
+The Agent CLI (`thub`) is a self-hosted job network that lets CI/CD pipelines and individual developers run firmware tests on real hardware or emulators in a private lab. `thub` is the single entry point for both: it's stateless, everything it knows comes from the [Coordinator](https://github.com/andrianyablonskyy/thub-coordinator) API, and it runs identically on a GitHub-hosted runner and a developer laptop — a developer reproducing a CI failure runs exactly the same command the pipeline runs.
 
-See the [main TestHub repo](https://github.com/andrianyablonskyy/thub) for the full system architecture and how this fits with the Coordinator and the [Client](https://github.com/andrianyablonskyy/thub-client).
+See how this fits with the [Coordinator](https://github.com/andrianyablonskyy/thub-coordinator) and the [Client](https://github.com/andrianyablonskyy/thub-client).
 
 ## Install
 
@@ -347,7 +347,7 @@ Report only, quietly, with the verdict as a commit status:
           commit-status: true
 ```
 
-Complete workflows, every input, and how the PR comment and test table work are in `packages/action/README.md` and the main README §11.1.
+Complete workflows, every input, and how the PR comment and test table work are in the [thub-action README](https://github.com/andrianyablonskyy/thub-action#readme) and the main README §11.1.
 
 With the Agent directly:
 
