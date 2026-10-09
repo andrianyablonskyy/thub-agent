@@ -516,7 +516,7 @@ keyCommand
 
 program
   .command('check-update')
-  .description('Compare this Agent with the latest release (its repository\'s newest vX.Y.Z tag)')
+  .description('Compare this Agent with the latest published version')
   .action(async () => {
     try {
       const latest = await fetchLatestVersion(PACKAGES.agent);
@@ -530,7 +530,7 @@ program
 
 program
   .command('self-update')
-  .description('Update this Agent to the latest (or a given) release, with npm i -g from its git repository')
+  .description('Update this Agent to the latest (or a given) version with npm i -g')
   .option('--to <x.y.z>', 'Install this version instead of the latest')
   .action(async (opts) => {
     try {

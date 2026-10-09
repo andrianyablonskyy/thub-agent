@@ -7,9 +7,9 @@ See how this fits with the [Coordinator](https://github.com/andrianyablonskyy/th
 ## Install
 
 ```bash
-npm i -g --install-links git+https://github.com/andrianyablonskyy/thub-agent.git
+npm i -g @andrian.yablonskyy/thub-agent
 # or, one-off in CI:
-npx -y --package='git+https://github.com/andrianyablonskyy/thub-agent.git#semver:*' thub run --type sw --download-file "$IMAGE_URL" --command ./ci/test.sh --wait
+npx -y @andrian.yablonskyy/thub-agent run --type sw --download-file "$IMAGE_URL" --command ./ci/test.sh --wait
 ```
 
 ## Configuration
@@ -360,7 +360,7 @@ test-sw:
     THUB_KEY: ${{ secrets.THUB_CI_TOKEN }}   # a CI token (dashboard → CI tokens)
   steps:
     - run: |
-        npx -y --package='git+https://github.com/andrianyablonskyy/thub-agent.git#semver:*' thub run --type sw \
+        npx -y @andrian.yablonskyy/thub-agent run --type sw \
           --download-file "${{ needs.build.outputs.image_url }}" \
           --env GH_TOKEN="${{ secrets.TESTS_READ_TOKEN }}",REPO="$GITHUB_REPOSITORY",SHA="$GITHUB_SHA" \
           --command 'git init -q src && cd src && git fetch -q --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$REPO.git" "$SHA" &&
@@ -377,7 +377,7 @@ test-hw:
   variables: { THUB_URL: https://thub.example.com, THUB_NO_SELF_UPDATE: "1" }   # THUB_KEY: a masked CI/CD variable
   script:
     - |
-      npx -y --package='git+https://github.com/andrianyablonskyy/thub-agent.git#semver:*' thub run --type hw --label board:nucleo-f401re --download-file "$IMAGE_URL" \
+      npx -y @andrian.yablonskyy/thub-agent run --type hw --label board:nucleo-f401re --download-file "$IMAGE_URL" \
         --env CI_JOB_TOKEN --env CI_SERVER_HOST --env CI_PROJECT_PATH --env CI_COMMIT_SHA \
         --command 'git init -q src && cd src &&
                    git fetch -q --depth 1 "https://gitlab-ci-token:$CI_JOB_TOKEN@$CI_SERVER_HOST/$CI_PROJECT_PATH.git" "$CI_COMMIT_SHA" &&
@@ -393,7 +393,7 @@ test-hw:
     image: node:24
     script:   # repository variables: THUB_URL, THUB_KEY (secured), TESTS_TOKEN (a repository access token)
       - >-
-        npx -y --package='git+https://github.com/andrianyablonskyy/thub-agent.git#semver:*' thub run --type hw --download-file "$IMAGE_URL"
+        npx -y @andrian.yablonskyy/thub-agent run --type hw --download-file "$IMAGE_URL"
         --env TESTS_TOKEN --env BITBUCKET_REPO_FULL_NAME --env BITBUCKET_COMMIT
         --command 'git init -q src && cd src &&
         git fetch -q --depth 1 "https://x-token-auth:$TESTS_TOKEN@bitbucket.org/$BITBUCKET_REPO_FULL_NAME.git" "$BITBUCKET_COMMIT" &&
@@ -412,7 +412,7 @@ stage('HW tests') {
   }
   steps {
     sh '''
-      npx -y --package='git+https://github.com/andrianyablonskyy/thub-agent.git#semver:*' thub run --type hw --download-file "$IMAGE_URL" \
+      npx -y @andrian.yablonskyy/thub-agent run --type hw --download-file "$IMAGE_URL" \
         --command './ci/hw-tests.sh' --wait --meta buildUrl="$BUILD_URL"
     '''
   }
@@ -439,7 +439,7 @@ test-hw:
     THUB_URL: https://thub.example.com                       # THUB_KEY, GITLAB_TOKEN: masked CI/CD variables
     THUB_NO_SELF_UPDATE: "1"
   before_script:
-    - npm i -g --install-links git+https://github.com/andrianyablonskyy/thub-agent.git
+    - npm i -g @andrian.yablonskyy/thub-agent
   script:
     - thub run --type hw --label board:nucleo-f401re --download-file "$IMAGE_URL"
         --command './ci/hw-tests.sh' --suite smoke --timeout 30m --wait --id-file .thub-job
@@ -461,7 +461,7 @@ pipelines:
           max-time: 60
           script:                                            # THUB_URL, THUB_KEY, BITBUCKET_TOKEN: repository variables
             - export THUB_NO_SELF_UPDATE=1
-            - npm i -g --install-links git+https://github.com/andrianyablonskyy/thub-agent.git
+            - npm i -g @andrian.yablonskyy/thub-agent
             - thub run --type hw --label board:nucleo-f401re --command './ci/hw-tests.sh' --suite smoke --timeout 30m --wait --id-file .thub-job
           after-script:                                      # runs whether the step passed or failed
             - '[ -s .thub-job ] && thub report "$(cat .thub-job)" --post bitbucket --commit-status --title "HW smoke"'
