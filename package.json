@@ -1,6 +1,6 @@
 {
   "name": "@andrian.yablonskyy/thub-agent",
-  "version": "1.1.12",
+  "version": "1.1.13",
   "description": "TestHub Agent CLI — the single entry point CI/CD and developers use to submit and follow test jobs",
   "license": "SEE LICENSE IN LICENSE.md",
   "author": "Andrian Yablonskyy <andrian.yablonskyy@gmail.com>",
