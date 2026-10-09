@@ -2,6 +2,13 @@
 
 What changed in each release, newest first. `## Unreleased` collects the changes since the version on npm; `bin/publish` turns that heading into the version and date it releases.
 
+## Unreleased
+
+### Removed
+
+- **`--token`, `THUB_TOKEN` and the config file's `token`.** Use `--key`, `THUB_KEY` and `key`; `thub config set` accepts `url` and `key` only.
+- The unused `PLATFORMS` export of `report.js`.
+
 ## 1.1.13 — 2026-10-09
 
 Changes since 1.1.12.

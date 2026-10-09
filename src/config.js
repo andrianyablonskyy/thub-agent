@@ -1,6 +1,6 @@
 /**
  * @file        packages/agent/src/config.js
- * @description Agent config resolution: flags > env > config file > bundled default (url/token/user)
+ * @description Agent config resolution: flags > env > config file > bundled default (url and access key)
  *
  * @author      Andrian Yablonskyy
  * @copyright   Copyright (c) 2026 Andrian Yablonskyy. All rights reserved.
@@ -18,8 +18,7 @@ const fs = require('node:fs'),
   path = require('node:path');
 
 // §7: "Configuration is read from flags, then environment (THUB_URL,
-// THUB_KEY), then ~/.config/thub/agent.json." The access key (§10.3) used to
-// be called a token: --token, THUB_TOKEN and a saved `token` still work.
+// THUB_KEY), then ~/.config/thub/agent.json."
 const CONFIG_PATH = path.join(os.homedir(), '.config', 'thub', 'agent.json'),
 
   // Bundled with the package as a last-resort default, below the user's own
@@ -51,9 +50,9 @@ function writeConfigFile(config){
 function resolveConnection(flags = {}){
   const file = { ...readJsonFile(PACKAGE_DEFAULT_CONFIG_PATH), ...readConfigFile() },
     url = flags.url || process.env.THUB_URL || file.url,
-    [token, keySource] = flags.key || flags.token ? [flags.key || flags.token, 'flag']
-      : process.env.THUB_KEY || process.env.THUB_TOKEN ? [process.env.THUB_KEY || process.env.THUB_TOKEN, process.env.THUB_KEY ? 'THUB_KEY' : 'THUB_TOKEN']
-        : file.key || file.token ? [file.key || file.token, 'file'] : [null, null];
+    [token, keySource] = flags.key ? [flags.key, 'flag']
+      : process.env.THUB_KEY ? [process.env.THUB_KEY, 'THUB_KEY']
+        : file.key ? [file.key, 'file'] : [null, null];
   if (!url || !token){
     const err = new Error(
       'Missing Coordinator URL or access key. Set them with `thub config set url <url>` and `thub config set key <key>`, ' +

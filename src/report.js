@@ -303,4 +303,4 @@ async function report(api, baseUrl, jobId, opts, { env = process.env, out = cons
   return result;
 }
 
-module.exports = { report, PLATFORMS };
+module.exports = { report };

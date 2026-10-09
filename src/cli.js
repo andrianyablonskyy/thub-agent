@@ -15,7 +15,7 @@
 
 'use strict';
 
-const { Command, Option } = require('commander'),
+const { Command } = require('commander'),
   {
     ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime,
     parseEnvList, POWER_ACTIONS, DEFAULT_RESET_DELAY_SEC, MAX_RESET_DELAY_SEC, powerRequestErrors
@@ -33,7 +33,6 @@ program
   .description('TestHub Agent — submit test jobs and follow them, from CI or your laptop')
   .option('--url <url>', 'Coordinator URL (overrides THUB_URL / config file)')
   .option('--key <key>', 'Your access key (overrides THUB_KEY / config file)')
-  .addOption(new Option('--token <token>', 'Old name of --key').hideHelp())
   .version(version);
 
 // An admin-requested self-update (README §10.2) is applied at the start of
@@ -436,19 +435,12 @@ config
   .argument('<name>', 'url | key')
   .argument('<value>')
   .action((name, value) => {
-    // `token` is the old name of `key`.
-    const setting = name === 'token' ? 'key' : name;
-    if (!['url', 'key'].includes(setting)){
-      console.error(setting === 'group'
-        ? 'Error: a job\'s group is set on the dashboard now (Users / CI tokens), not in the Agent'
-        : setting === 'user'
-          ? 'Error: a job\'s user comes from your access key now (thub whoami shows it), not from the Agent'
-          : 'Error: the setting must be "url" or "key"');
+    if (!['url', 'key'].includes(name)){
+      console.error('Error: the setting must be "url" or "key"');
       process.exit(EXIT_CODES.USAGE);
     }
-    const { token: _old, ...current } = readConfigFile();
-    writeConfigFile({ ...(setting === 'key' ? current : { ...current, ...(_old ? { token: _old } : {}) }), [setting]: value });
-    console.log(`Saved ${setting} to config`);
+    writeConfigFile({ ...readConfigFile(), [name]: value });
+    console.log(`Saved ${name} to config`);
   });
 
 // Who this access key belongs to (§10.3).
@@ -498,8 +490,7 @@ keyCommand
       const { keySource } = resolveConnection(program.opts()),
         { key, username } = await client().post('/me/key/rotate');
       if (keySource === 'file'){
-        const { token: _old, ...current } = readConfigFile();
-        writeConfigFile({ ...current, key });
+        writeConfigFile({ ...readConfigFile(), key });
         console.log(`New access key for ${username} saved to ${CONFIG_PATH} — the old one has stopped working.`);
       }
       else {
