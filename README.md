@@ -1,8 +1,18 @@
 # @andrian.yablonskyy/thub-agent
 
-The Agent CLI (`thub`) is a self-hosted job network that lets CI/CD pipelines and individual developers run firmware tests on real hardware or emulators in a private lab. `thub` is the single entry point for both: it's stateless, everything it knows comes from the [Coordinator](https://github.com/andrianyablonskyy/thub-coordinator) API, and it runs identically on a GitHub-hosted runner and a developer laptop — a developer reproducing a CI failure runs exactly the same command the pipeline runs.
+The Agent CLI (`thub`) is a self-hosted job network that lets CI/CD pipelines and individual developers run firmware tests on real hardware or emulators in a private lab. `thub` is the single entry point for both: it's stateless, everything it knows comes from the [Coordinator](https://github.com/users/andrianyablonskyy/packages/container/package/thub-coordinator) API, and it runs identically on a GitHub-hosted runner and a developer laptop — a developer reproducing a CI failure runs exactly the same command the pipeline runs.
 
-See how this fits with the [Coordinator](https://github.com/andrianyablonskyy/thub-coordinator) and the [Client](https://github.com/andrianyablonskyy/thub-client).
+See how this fits with the [Coordinator](https://github.com/users/andrianyablonskyy/packages/container/package/thub-coordinator) and the [Client](https://github.com/andrianyablonskyy/thub-client). The Coordinator runs from its Docker image, `ghcr.io/andrianyablonskyy/thub-coordinator`:
+
+```bash
+docker run -d --name thub -p 8080:8080 -v thub-data:/var/lib/thub \
+  -e THUB_PUBLIC_URL=https://thub.example.com \
+  -e THUB_SESSION_SECRET="$(openssl rand -hex 32)" -e THUB_CLIENT_JOIN_KEY="$(openssl rand -hex 24)" \
+  -e THUB_ADMIN_PASSWORD='<first admin password>' -e THUB_LICENSE='<license>' \
+  ghcr.io/andrianyablonskyy/thub-coordinator:latest
+```
+
+Then create a CI token or an access key on its dashboard for `thub`.
 
 ## Install
 
