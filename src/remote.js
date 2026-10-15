@@ -15,6 +15,8 @@
 'use strict';
 
 const net = require('node:net'),
+  http = require('node:http'),
+  dgram = require('node:dgram'),
   { EventEmitter } = require('node:events'),
   { decodeData, dataMessages, parseControl, backoffMs, REMOTE_CLOSE } = require('@andrian.yablonskyy/thub-common');
 
@@ -151,7 +153,7 @@ class RemoteSession extends EventEmitter{
       return;
     }
     if (msg.t === 'devices'){
-      this.devices = { uarts: msg.uarts || [], probes: msg.probes || [], serial: msg.serial !== false };
+      this.devices = { uarts: msg.uarts || [], probes: msg.probes || [], serial: msg.serial !== false, camera: msg.camera || null };
       this.emit('devices', this.devices);
       // Ready again: every channel still wanted is opened on the Client.
       this.ready = true;
@@ -297,4 +299,59 @@ function listenLocal(session, devices, { host, uartBase, gdbBase, target, log })
   ]).then((ports) => ({ servers, ports }));
 }
 
-module.exports = { RemoteSession, listenLocal };
+// `thub connect`: the board's USB camera (README §5.7) — H.264 in MPEG-TS,
+// streamed by the Client since the reservation started — on a local URL
+// that's this reservation's own: http://<host>:<port>/<reservation>/video.ts
+// (VLC, ffplay, mpv). Each viewer is a channel of its own. With `udpPort`,
+// also re-sent as UDP datagrams to udp://<host>:<udpPort> (QGroundControl,
+// GStreamer). Resolves to { server, url, udp, close() }.
+function serveVideo(session, { host, port, reservation, udpPort = null, log }){
+  const target = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host,
+    videoPath = `/${reservation}/video.ts`,
+    server = http.createServer((req, res) => {
+      if (req.method !== 'GET' || req.url !== videoPath){
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        return res.end('Not this reservation\'s video — thub connect prints its current link.\n');
+      }
+      res.writeHead(200, { 'Content-Type': 'video/mp2t', 'Cache-Control': 'no-store' });
+      let ch = session.open('video', 1, {
+        data: (buf) => res.write(buf),
+        note: (text) => log(`Video: ${text}`),
+        closed: (reason) => {
+          ch = null;
+          log(`Video: ${reason}`);
+          res.end();
+        }
+      }, { persistent: true });
+      req.on('close', () => ch !== null && session.close(ch));
+    });
+  let udp = null,
+    udpCh = null;
+  if (udpPort){
+    udp = dgram.createSocket(target.includes(':') ? 'udp6' : 'udp4');
+    udp.on('error', (err) => log(`Video (UDP): ${err.message}`));
+    udpCh = session.open('video', 1, {
+      data: (buf) => udp.send(buf, udpPort, target),
+      note: (text) => log(`Video: ${text}`),
+      closed: (reason) => log(`Video (UDP): ${reason}`)
+    }, { persistent: true });
+  }
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => resolve({
+      server,
+      url: `http://${target.includes(':') ? `[${target}]` : target}:${server.address().port}${videoPath}`,
+      udp: udpPort ? `udp://${target}:${udpPort}` : null,
+      close: () => {
+        server.close();
+        server.closeAllConnections?.();
+        if (udpCh !== null){
+          session.close(udpCh);
+        }
+        udp?.close();
+      }
+    }));
+  });
+}
+
+module.exports = { RemoteSession, listenLocal, serveVideo };

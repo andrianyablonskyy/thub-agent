@@ -181,6 +181,8 @@ thub run --type sw --download-file https://does-not-exist.invalid/app.bin \
 
 **Its UARTs and SWD on your machine:** `thub connect lab-hw-01 --target stm32f4x` keeps a live connection to the reserved board and prints the link and a local port per device: UART 1 on `127.0.0.1:5001` (and up; `--uart-port`), ST-Link 1's GDB server on `127.0.0.1:3333` (and up; `--gdb-port`) — `arm-none-eabi-gdb -ex "target extended-remote 127.0.0.1:3333"`, `socat -,raw,echo=0 TCP:127.0.0.1:5001`, or pyserial's `socket://127.0.0.1:5001`. Each GDB connection starts its own OpenOCD on the Client with `target/<name>.cfg` (`--target`, else the probe's OpenOCD target set on the runner card). `thub console lab-hw-01 --uart 1` puts a UART right in your terminal (Ctrl-] quits). A dropped connection is made again by itself (a UART port stays connected through it, GDB has to reconnect); the session ends with the reservation. Each reservation has its own link (`thub reserve` prints it): reserve again later and `thub connect` again for the new one.
 
+**Watch the board:** on a runner with a USB camera (label `video-stream`), its stream starts with your reservation, and `thub connect` prints a local link of that reservation's own — `http://127.0.0.1:8090/<reservation id>/video.ts` (`--video-port`) for VLC, ffplay or mpv; `--video-udp 5600` also sends it as UDP to `udp://127.0.0.1:5600`.
+
 **Who submitted a job** comes from your key: your username (a CI token: its name), shown on the dashboard, in `thub jobs`, on the Client's console and as `JOB_USER`. There's no `--user`.
 
 ## Environment variables and secrets

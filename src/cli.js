@@ -20,7 +20,7 @@ const { Command } = require('commander'),
     ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime,
     parseEnvList, POWER_ACTIONS, DEFAULT_RESET_DELAY_SEC, MAX_RESET_DELAY_SEC, powerRequestErrors, OPENOCD_TARGET_RE
   } = require('@andrian.yablonskyy/thub-common'),
-  { RemoteSession, listenLocal } = require('./remote'),
+  { RemoteSession, listenLocal, serveVideo } = require('./remote'),
   { resolveConnection, writeConfigFile, readConfigFile, CONFIG_PATH } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming'),
@@ -485,13 +485,16 @@ program
   .option('--uart-port <port>', 'Local port of UART 1 (UART n: this + n - 1)', (v) => Number(v), 5001)
   .option('--gdb-port <port>', 'Local GDB port of ST-Link 1 (ST-Link n: this + n - 1)', (v) => Number(v), 3333)
   .option('--bind <address>', 'Local address to listen on (another than loopback shares the board with your network)', '127.0.0.1')
+  .option('--video-port <port>', 'Local HTTP port of the board\'s USB camera stream, if it has one', (v) => Number(v), 8090)
+  .option('--video-udp <port>', 'Also send the camera stream as UDP (MPEG-TS) to this local port, e.g. 5600', (v) => Number(v))
   .option('--json', 'Print the ports as JSON once connected', false)
   .action(async (name, opts) => {
     try {
       if (opts.target !== undefined && !OPENOCD_TARGET_RE.test(opts.target)){
         throw usageError(`--target must be an OpenOCD target script name such as stm32f4x (got "${opts.target}")`);
       }
-      for (const [flag, v]of [['--uart-port', opts.uartPort], ['--gdb-port', opts.gdbPort]]){
+      for (const [flag, v]of [['--uart-port', opts.uartPort], ['--gdb-port', opts.gdbPort], ['--video-port', opts.videoPort],
+        ...(opts.videoUdp !== undefined ? [['--video-udp', opts.videoUdp]] : [])]){
         if (!Number.isInteger(v) || v < 0 || v > 65535){
           throw usageError(`${flag} must be a port number`);
         }
@@ -502,7 +505,10 @@ program
         until = null;
       const cleanup = () => {
         session.stop();
-        listening?.then(({ servers }) => servers.forEach((srv) => srv.close())).catch(() => {});
+        listening?.then(({ servers, video }) => {
+          servers.forEach((srv) => srv.close());
+          video?.close();
+        }).catch(() => {});
       };
       onRemoteTrouble(session, log, cleanup);
       session.on('status', (s) => {
@@ -512,15 +518,24 @@ program
         if (listening){
           return;
         }
-        listening = listenLocal(session, devices, {
-          host: opts.bind, uartBase: opts.uartPort, gdbBase: opts.gdbPort, target: opts.target, log
-        });
+        listening = (async () => {
+          const local = await listenLocal(session, devices, {
+              host: opts.bind, uartBase: opts.uartPort, gdbBase: opts.gdbPort, target: opts.target, log
+            }),
+            // The camera (README §5.7) on a URL with this reservation's own id in it.
+            video = devices.camera
+              ? await serveVideo(session, {
+                host: opts.bind, port: opts.videoPort, reservation: session.url.split('/').pop(), udpPort: opts.videoUdp, log
+              })
+              : null;
+          return { ...local, video };
+        })();
         listening
-          .then(({ ports }) => printConnection(name, session.url, until, ports, devices, opts))
+          .then(({ ports, video }) => printConnection(name, session.url, until, ports, devices, opts, video))
           .catch((err) => {
             cleanup();
             fail(usageError(err.code === 'EADDRINUSE'
-              ? `Local port ${err.port} is in use — pick others with --uart-port / --gdb-port`
+              ? `Local port ${err.port} is in use — pick others with --uart-port / --gdb-port / --video-port`
               : `Can't listen locally: ${err.message}`));
           });
       });
@@ -537,9 +552,12 @@ program
   });
 
 // The connection link and how to use each port.
-function printConnection(name, link, until, ports, devices, opts){
+function printConnection(name, link, until, ports, devices, opts, video){
   if (opts.json){
-    return console.log(JSON.stringify({ client: name, link, until, ports: ports.map((p) => ({ kind: p.kind, ...p.device, host: opts.bind, port: p.port })) }));
+    return console.log(JSON.stringify({
+      client: name, link, until, ports: ports.map((p) => ({ kind: p.kind, ...p.device, host: opts.bind, port: p.port })),
+      video: video ? { camera: devices.camera.name, url: video.url, udp: video.udp } : null
+    }));
   }
   const host = opts.bind === '0.0.0.0' || opts.bind === '::' ? 'localhost' : opts.bind,
     lines = [
@@ -560,8 +578,13 @@ function printConnection(name, link, until, ports, devices, opts){
       `        arm-none-eabi-gdb -ex "target extended-remote ${host}:${port}"   (each connection starts its own OpenOCD)`);
     }
   }
-  if (!ports.length){
-    lines.push(`${name} has no UARTs or ST-Links in its config.`);
+  if (video){
+    lines.push(`Video   ${devices.camera.name}  H.264 (MPEG-TS)  ${video.url}`,
+      `        vlc ${video.url}  ·  ffplay -fflags nobuffer ${video.url}` +
+      (video.udp ? `\n        UDP: ${video.udp}  (ffplay -fflags nobuffer ${video.udp})` : '  ·  UDP too: --video-udp 5600'));
+  }
+  if (!ports.length && !video){
+    lines.push(`${name} has no UARTs, ST-Links or camera.`);
   }
   if (devices.uarts.length && !devices.serial){
     lines.push('', 'UARTs won\'t open: the \'serialport\' package isn\'t installed on the Client host.');
