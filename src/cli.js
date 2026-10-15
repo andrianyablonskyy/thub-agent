@@ -2,7 +2,7 @@
 
 /**
  * @file        packages/agent/src/cli.js
- * @description thub CLI entry point: run/status/cancel/power/report/resources/jobs/config commands (README §7)
+ * @description thub CLI entry point: run/status/cancel/power/report/resources/reserve/release/jobs/config commands (README §7)
  *
  * @author      Andrian Yablonskyy
  * @copyright   Copyright (c) 2026 Andrian Yablonskyy. All rights reserved.
@@ -384,8 +384,57 @@ program
         ['STATUS', (r) => r.status],
         ['BUSY', (r) => r.busySource || '-'],
         ['LABELS', (r) => r.labels.join(',')],
+        ['RESERVED', (r) => (r.reservation ? `${r.reservation.by} until ${formatDateTime(r.reservation.until)}` : '-')],
         ['LAST HEARTBEAT', (r) => r.lastHeartbeatAt || 'never']
       ]);
+    }
+    catch (err){
+      fail(err);
+    }
+  });
+
+// README §5.5: hold a runner for your own jobs for a while — everyone
+// else's go elsewhere or wait — and give it back, or let the time run out.
+program
+  .command('reserve')
+  .description('Reserve a runner for your own jobs, for a while: until then only your jobs run on it')
+  .argument('<client>', 'The runner\'s name or id (thub resources)')
+  .option('--for <duration>', 'How long, e.g. 30m, 2h (default 1h; at most what the runner allows). Again on your own: extends it from now')
+  .option('--json', 'Machine-readable output', false)
+  .action(async (name, opts) => {
+    try {
+      let minutes;
+      if (opts.for !== undefined){
+        const sec = parseDurationSec(opts.for);
+        if (!sec || sec % 60){
+          throw usageError(`--for must be whole minutes, e.g. 30m or 2h (got "${opts.for}")`);
+        }
+        minutes = sec / 60;
+      }
+      const r = await client().post(`/resources/${encodeURIComponent(name)}/reserve`, minutes ? { minutes } : {});
+      if (opts.json){
+        return console.log(JSON.stringify(r));
+      }
+      console.log(`${r.name} is reserved for you until ${formatDateTime(r.reservation.until)}.\n` +
+        `Only your jobs run on it (thub run --client ${r.name} …); thub release ${r.name} when you're done.`);
+    }
+    catch (err){
+      fail(err);
+    }
+  });
+
+program
+  .command('release')
+  .description('End your reservation of a runner (maintainers: anyone\'s) — everyone\'s jobs can run on it again')
+  .argument('<client>', 'The runner\'s name or id')
+  .option('--json', 'Machine-readable output', false)
+  .action(async (name, opts) => {
+    try {
+      const r = await client().post(`/resources/${encodeURIComponent(name)}/release`);
+      if (opts.json){
+        return console.log(JSON.stringify(r));
+      }
+      console.log(r.released ? `${r.name} released.` : `${r.name} wasn't reserved.`);
     }
     catch (err){
       fail(err);

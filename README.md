@@ -45,6 +45,8 @@ thub cancel   <jobId>          Cancel a job
 thub power    on|off|reset <jobId> [--delay <sec>] [--port <n>]   Switch the USB power of the Client running your job (owner only)
 thub report   <jobId> [--post gitlab|bitbucket|github] [--commit-status]   The job's report, or a sticky MR/PR comment
 thub resources                 List resources and their status
+thub reserve  <client> [--for <dur>]   Only your jobs run on this runner until then (default 1h)
+thub release  <client>                 End your reservation (maintainers: anyone's)
 thub jobs     [--mine] [--state <s>]   List recent jobs (a cli token: only its own; a ci token: all, or its own with --mine)
 thub config   set <key> <value>        Save coordinator URL / key / default user locally
 thub check-update                      Compare this Agent with the latest published version
@@ -172,6 +174,8 @@ thub run --type sw --download-file https://does-not-exist.invalid/app.bin \
 ```
 
 **Run in a resource group:** there's no `--group` option. An admin or maintainer gives your user (or a CI token) one group on the dashboard, and every job it submits runs only on that group's resources; `thub whoami` shows it.
+
+**Reserve a board** to iterate on it without a pipeline taking it between your runs: `thub reserve lab-hw-01 --for 2h`. Until then the scheduler gives lab-hw-01 only your jobs (`thub run --client lab-hw-01 …`); everyone else's go to another runner or wait. `thub release lab-hw-01` gives it back early, otherwise it frees itself when the time is up — a job still running keeps running. `--for` takes whole minutes (`30m`, `2h`) up to the runner's own maximum (8 h unless a maintainer set another on its card); reserving it again extends it from now. `thub resources` shows who holds what. Needs a user's key — a CI token can't reserve.
 
 **Who submitted a job** comes from your key: your username (a CI token: its name), shown on the dashboard, in `thub jobs`, on the Client's console and as `JOB_USER`. There's no `--user`.
 
