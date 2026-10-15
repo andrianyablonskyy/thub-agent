@@ -514,10 +514,19 @@ program
       session.on('status', (s) => {
         until = s.until;
       });
+      // The camera's state on the Client (README §5.7): said when it changes.
+      const cameraState = (c) => (c ? (c.streaming ? 'streaming' : c.error ? `not streaming — ${c.error}` : 'starting…') : null);
+      let lastCamera = null;
       session.on('devices', (devices) => {
+        const camera = cameraState(devices.camera);
         if (listening){
+          if (camera && camera !== lastCamera){
+            log(`Video: ${camera}`);
+          }
+          lastCamera = camera;
           return;
         }
+        lastCamera = camera;
         listening = (async () => {
           const local = await listenLocal(session, devices, {
               host: opts.bind, uartBase: opts.uartPort, gdbBase: opts.gdbPort, target: opts.target, log
@@ -579,7 +588,9 @@ function printConnection(name, link, until, ports, devices, opts, video){
     }
   }
   if (video){
-    lines.push(`Video   ${devices.camera.name}  H.264 (MPEG-TS)  ${video.url}`,
+    const c = devices.camera,
+      state = c.streaming === false && c.error ? `  (not streaming — ${c.error})` : c.streaming === false ? '  (starting…)' : '';
+    lines.push(`Video   ${c.name}  H.264 (MPEG-TS)  ${video.url}${state}`,
       `        vlc ${video.url}  ·  ffplay -fflags nobuffer ${video.url}` +
       (video.udp ? `\n        UDP: ${video.udp}  (ffplay -fflags nobuffer ${video.udp})` : '  ·  UDP too: --video-udp 5600'));
   }
