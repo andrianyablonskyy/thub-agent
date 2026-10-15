@@ -2,7 +2,7 @@
 
 /**
  * @file        packages/agent/src/cli.js
- * @description thub CLI entry point: run/status/cancel/power/report/resources/reserve/release/jobs/config commands (README §7)
+ * @description thub CLI entry point: run/status/cancel/power/report/resources/reserve/release/connect/console/jobs/config commands (README §7)
  *
  * @author      Andrian Yablonskyy
  * @copyright   Copyright (c) 2026 Andrian Yablonskyy. All rights reserved.
@@ -18,8 +18,9 @@
 const { Command } = require('commander'),
   {
     ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime,
-    parseEnvList, POWER_ACTIONS, DEFAULT_RESET_DELAY_SEC, MAX_RESET_DELAY_SEC, powerRequestErrors
+    parseEnvList, POWER_ACTIONS, DEFAULT_RESET_DELAY_SEC, MAX_RESET_DELAY_SEC, powerRequestErrors, OPENOCD_TARGET_RE
   } = require('@andrian.yablonskyy/thub-common'),
+  { RemoteSession, listenLocal } = require('./remote'),
   { resolveConnection, writeConfigFile, readConfigFile, CONFIG_PATH } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming'),
@@ -416,7 +417,8 @@ program
         return console.log(JSON.stringify(r));
       }
       console.log(`${r.name} is reserved for you until ${formatDateTime(r.reservation.until)}.\n` +
-        `Only your jobs run on it (thub run --client ${r.name} …); thub release ${r.name} when you're done.`);
+        `Only your jobs run on it (thub run --client ${r.name} …); thub release ${r.name} when you're done.\n` +
+        `Its UARTs and SWD: thub connect ${r.name} (local ports), thub console ${r.name} (serial in this terminal).`);
     }
     catch (err){
       fail(err);
@@ -435,6 +437,184 @@ program
         return console.log(JSON.stringify(r));
       }
       console.log(r.released ? `${r.name} released.` : `${r.name} wasn't reserved.`);
+    }
+    catch (err){
+      fail(err);
+    }
+  });
+
+// README §5.6: the reserved board's UARTs and SWD, live from the Client
+// through the Coordinator — `thub connect` on local TCP ports for any tool
+// (GDB, socat, pyserial), `thub console` right in this terminal. Both make
+// a dropped connection again by themselves, until the reservation ends.
+function remoteSession(name){
+  const { url, token } = resolveConnection(program.opts());
+  return new RemoteSession({ baseUrl: url, token, client: name, userAgent: `thub-agent/${version}` });
+}
+
+function onRemoteTrouble(session, log, cleanup){
+  session.on('status', (s) => s.state === 'waiting' &&
+    log(`Waiting for ${s.client}'s Client to connect — it does within a heartbeat of the reservation…`));
+  session.on('disconnected', ({ retryMs, reason }) =>
+    log(`Connection lost${reason ? ` (${reason})` : ''} — reconnecting in ${Math.max(1, Math.round(retryMs / 1000))} s…`));
+  session.on('connected', ({ again }) => again && log('Reconnected.'));
+  session.on('fatal', (message) => {
+    cleanup();
+    fail(Object.assign(new Error(message), { status: EXIT_CODES.USAGE }));
+  });
+}
+
+program
+  .command('connect')
+  .description('Share your reserved board\'s UARTs and SWD (GDB via OpenOCD) on local TCP ports, over a live connection that reconnects by itself')
+  .argument('<client>', 'The runner you reserved (thub reserve)')
+  .option('--target <name>', 'OpenOCD target for SWD, e.g. stm32f4x (target/<name>.cfg; default: the probe\'s openocdTarget on the Client)')
+  .option('--uart-port <port>', 'Local port of UART 1 (UART n: this + n - 1)', (v) => Number(v), 5001)
+  .option('--gdb-port <port>', 'Local GDB port of ST-Link 1 (ST-Link n: this + n - 1)', (v) => Number(v), 3333)
+  .option('--bind <address>', 'Local address to listen on (another than loopback shares the board with your network)', '127.0.0.1')
+  .option('--json', 'Print the ports as JSON once connected', false)
+  .action((name, opts) => {
+    try {
+      if (opts.target !== undefined && !OPENOCD_TARGET_RE.test(opts.target)){
+        throw usageError(`--target must be an OpenOCD target script name such as stm32f4x (got "${opts.target}")`);
+      }
+      for (const [flag, v]of [['--uart-port', opts.uartPort], ['--gdb-port', opts.gdbPort]]){
+        if (!Number.isInteger(v) || v < 0 || v > 65535){
+          throw usageError(`${flag} must be a port number`);
+        }
+      }
+      const session = remoteSession(name),
+        log = (m) => console.error(m);
+      let listening = null,
+        until = null;
+      const cleanup = () => {
+        session.stop();
+        listening?.then(({ servers }) => servers.forEach((srv) => srv.close())).catch(() => {});
+      };
+      onRemoteTrouble(session, log, cleanup);
+      session.on('status', (s) => {
+        until = s.until;
+      });
+      session.on('devices', (devices) => {
+        if (listening){
+          return;
+        }
+        listening = listenLocal(session, devices, {
+          host: opts.bind, uartBase: opts.uartPort, gdbBase: opts.gdbPort, target: opts.target, log
+        });
+        listening
+          .then(({ ports }) => printConnection(name, session.url, until, ports, devices, opts))
+          .catch((err) => {
+            cleanup();
+            fail(usageError(err.code === 'EADDRINUSE'
+              ? `Local port ${err.port} is in use — pick others with --uart-port / --gdb-port`
+              : `Can't listen locally: ${err.message}`));
+          });
+      });
+      process.on('SIGINT', () => {
+        cleanup();
+        log(`Disconnected from ${name} (its reservation stays — thub release ${name} ends it).`);
+        process.exit(0);
+      });
+      session.start();
+    }
+    catch (err){
+      fail(err);
+    }
+  });
+
+// The connection link and how to use each port.
+function printConnection(name, link, until, ports, devices, opts){
+  if (opts.json){
+    return console.log(JSON.stringify({ client: name, link, until, ports: ports.map((p) => ({ kind: p.kind, ...p.device, host: opts.bind, port: p.port })) }));
+  }
+  const host = opts.bind === '0.0.0.0' || opts.bind === '::' ? 'localhost' : opts.bind,
+    lines = [
+      `Connected to ${name}${until ? ` — reserved until ${formatDateTime(until)} (thub release ${name} ends it)` : ''}`,
+      `Link: ${link}`,
+      ''
+    ];
+  for (const { kind, device: d, port }of ports){
+    if (kind === 'uart'){
+      lines.push(`UART ${d.index}  ${d.label}  ${d.baudRate} 8N1  tcp://${host}:${port}`,
+        `        terminal: thub console ${name} --uart ${d.index}`,
+        `        or: socat -,raw,echo=0 TCP:${host}:${port}  ·  pyserial: serial_for_url('socket://${host}:${port}')`);
+    }
+    else {
+      const target = opts.target || d.target;
+      lines.push(`SWD  ${d.index}  ${d.label}${d.serial ? ` (ST-Link ${d.serial})` : ''}  ` +
+        `OpenOCD target ${target || '— none: add --target <name>'}  GDB: ${host}:${port}`,
+      `        arm-none-eabi-gdb -ex "target extended-remote ${host}:${port}"   (each connection starts its own OpenOCD)`);
+    }
+  }
+  if (!ports.length){
+    lines.push(`${name} has no UARTs or ST-Links in its config.`);
+  }
+  if (devices.uarts.length && !devices.serial){
+    lines.push('', 'UARTs won\'t open: the \'serialport\' package isn\'t installed on the Client host.');
+  }
+  lines.push('', 'Ctrl-C disconnects; a dropped connection is made again by itself.');
+  console.log(lines.join('\n'));
+}
+
+program
+  .command('console')
+  .description('Your reserved board\'s UART in this terminal: its output here, your typing to the board. Ctrl-] quits')
+  .argument('<client>', 'The runner you reserved (thub reserve)')
+  .option('--uart <n>', 'Which UART (thub connect lists them)', (v) => Number(v), 1)
+  .action((name, opts) => {
+    try {
+      const session = remoteSession(name),
+        log = (m) => process.stderr.write(`\r\n— ${m} —\r\n`),
+        tty = process.stdin.isTTY;
+      let ch = null;
+      const restore = () => {
+          if (tty){
+            process.stdin.setRawMode(false);
+          }
+          process.stdin.pause();
+        },
+        cleanup = () => {
+          session.stop();
+          restore();
+        },
+        quit = (code = 0) => {
+          cleanup();
+          process.stderr.write(`\r\nDisconnected from ${name}.\r\n`);
+          process.exit(code);
+        };
+      onRemoteTrouble(session, log, cleanup);
+      session.on('devices', (devices) => {
+        if (ch !== null){
+          return;
+        }
+        const uart = devices.uarts.find((u) => u.index === opts.uart);
+        if (!uart){
+          cleanup();
+          return fail(usageError(`${name} has no UART ${opts.uart} (it has ${devices.uarts.length})`));
+        }
+        process.stderr.write(`Connected to ${name} UART ${uart.index} (${uart.label}, ${uart.baudRate} 8N1). Ctrl-] quits.\r\n`);
+        ch = session.open('uart', uart.index, {
+          data: (buf) => process.stdout.write(buf),
+          note: log,
+          closed: (reason) => {
+            log(reason);
+            quit(EXIT_CODES.USAGE);
+          }
+        }, { persistent: true });
+        if (tty){
+          process.stdin.setRawMode(true);
+        }
+        process.stdin.on('data', (buf) => {
+          if (buf.includes(0x1d)){
+            return quit();
+          }
+          session.write(ch, buf);
+        });
+        process.stdin.resume();
+      });
+      process.on('SIGINT', () => quit());
+      session.start();
     }
     catch (err){
       fail(err);

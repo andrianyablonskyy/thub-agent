@@ -47,6 +47,8 @@ thub report   <jobId> [--post gitlab|bitbucket|github] [--commit-status]   The j
 thub resources                 List resources and their status
 thub reserve  <client> [--for <dur>]   Only your jobs run on this runner until then (default 1h)
 thub release  <client>                 End your reservation (maintainers: anyone's)
+thub connect  <client> [--target <name>]   Your reserved board's UARTs and SWD (GDB) on local ports
+thub console  <client> [--uart <n>]    A reserved board's UART in this terminal (Ctrl-] quits)
 thub jobs     [--mine] [--state <s>]   List recent jobs (a cli token: only its own; a ci token: all, or its own with --mine)
 thub config   set <key> <value>        Save coordinator URL / key / default user locally
 thub check-update                      Compare this Agent with the latest published version
@@ -176,6 +178,8 @@ thub run --type sw --download-file https://does-not-exist.invalid/app.bin \
 **Run in a resource group:** there's no `--group` option. An admin or maintainer gives your user (or a CI token) one group on the dashboard, and every job it submits runs only on that group's resources; `thub whoami` shows it.
 
 **Reserve a board** to iterate on it without a pipeline taking it between your runs: `thub reserve lab-hw-01 --for 2h`. Until then the scheduler gives lab-hw-01 only your jobs (`thub run --client lab-hw-01 …`); everyone else's go to another runner or wait. `thub release lab-hw-01` gives it back early, otherwise it frees itself when the time is up — a job still running keeps running. `--for` takes whole minutes (`30m`, `2h`) up to the runner's own maximum (8 h unless a maintainer set another on its card); reserving it again extends it from now. `thub resources` shows who holds what. Needs a user's key — a CI token can't reserve.
+
+**Its UARTs and SWD on your machine:** `thub connect lab-hw-01 --target stm32f4x` keeps a live connection to the reserved board and prints the link and a local port per device: UART 1 on `127.0.0.1:5001` (and up; `--uart-port`), ST-Link 1's GDB server on `127.0.0.1:3333` (and up; `--gdb-port`) — `arm-none-eabi-gdb -ex "target extended-remote 127.0.0.1:3333"`, `socat -,raw,echo=0 TCP:127.0.0.1:5001`, or pyserial's `socket://127.0.0.1:5001`. Each GDB connection starts its own OpenOCD on the Client with `target/<name>.cfg` (`--target`, else the probe's OpenOCD target set on the runner card). `thub console lab-hw-01 --uart 1` puts a UART right in your terminal (Ctrl-] quits). A dropped connection is made again by itself (a UART port stays connected through it, GDB has to reconnect); the session ends with the reservation.
 
 **Who submitted a job** comes from your key: your username (a CI token: its name), shown on the dashboard, in `thub jobs`, on the Client's console and as `JOB_USER`. There's no `--user`.
 
