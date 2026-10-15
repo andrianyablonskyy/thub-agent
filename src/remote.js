@@ -23,8 +23,13 @@ const net = require('node:net'),
 // Without a ping from the Coordinator (every 30 s) for this long, the
 // connection is taken for dead and made again.
 const PING_TIMEOUT_MS = 75_000,
-  // HTTP answers to the upgrade that won't change by trying again.
-  FINAL_STATUSES = new Set([401, 403, 404, 409]);
+  // HTTP answers to the upgrade that won't change by trying again: a
+  // refusal, or — a redirect, 426 — a reverse proxy that doesn't pass
+  // WebSocket upgrades on to the Coordinator.
+  FINAL_STATUSES = new Set([401, 403, 404, 409, 426]),
+  isFinal = (status) => FINAL_STATUSES.has(status) || (status >= 300 && status < 400),
+  PROXY_HINT = 'a reverse proxy in front of the Coordinator isn\'t passing WebSocket upgrades on to it ' +
+    '(Help → Reserved boards → Client host setup)';
 
 // One WebSocket to the reservation's own link (/api/v1/remote/<reservation>,
 // from GET /resources), made again whenever it drops (1 s, 2 s, 4 s … 30 s
@@ -99,7 +104,14 @@ class RemoteSession extends EventEmitter{
         catch {
           error = null;
         }
-        refused = { status: res.statusCode, error: error || `HTTP ${res.statusCode}` };
+        const status = res.statusCode,
+          location = res.headers.location ? ` → ${res.headers.location}` : '';
+        refused = {
+          status,
+          error: error || (status >= 300 && status < 400
+            ? `The Coordinator answered HTTP ${status}${location} instead of opening a WebSocket: ${PROXY_HINT}`
+            : `HTTP ${status}`)
+        };
         ws.terminate();
       });
     });
@@ -116,7 +128,7 @@ class RemoteSession extends EventEmitter{
       if (this.stopped){
         return;
       }
-      if ((refused && FINAL_STATUSES.has(refused.status)) || code === REMOTE_CLOSE.RESERVATION_ENDED || code === REMOTE_CLOSE.REPLACED){
+      if ((refused && isFinal(refused.status)) || code === REMOTE_CLOSE.RESERVATION_ENDED || code === REMOTE_CLOSE.REPLACED){
         this.stopped = true;
         const message = reason || 'The Coordinator ended the connection';
         for (const ch of [...this.channels.keys()]){
