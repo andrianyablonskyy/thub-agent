@@ -2,7 +2,36 @@
 
 What changed in each release, newest first. `## Unreleased` collects the changes since the version on npm; `bin/publish` turns that heading into the version and date it releases.
 
+## 1.1.22 — 2026-10-15
+
+### Changed
+
+- **`thub connect` shows the camera's state.** The Video line says whether the board's camera is streaming, and if not, why, for example `(not streaming — ffmpeg isn't installed on this Client host …)`. Each change is printed as it happens (`Video: streaming`, `Video: not streaming — …`), with no viewer needed. Needs Client 1.1.26.
+
+## 1.1.21 — 2026-10-15
+
+### Fixed
+
+- **`thub connect` and `thub console` behind a proxy without WebSocket support** stop with the reason instead of retrying forever: *The Coordinator answered HTTP 302 → /login instead of opening a WebSocket: a reverse proxy in front of the Coordinator isn't passing WebSocket upgrades …* The same goes for `426` (Coordinator 1.1.41). Other refusals (`401`, `403`, `404`, `409`) were already final.
+
 ## 1.1.20 — 2026-10-15
+
+### Added
+
+- **`thub reserve <client> [--for <dur>]`** holds a runner for your own jobs (README §5.5).
+  - **Duration:** whole minutes (`30m`, `2h`; 1 h by default), up to the runner's maximum. Running it again extends the reservation from now.
+  - **Output:** the end time, how to use the runner, and the reservation's own remote access link.
+  - **Release:** **`thub release <client>`** ends it; maintainers and admins can end anyone's.
+- **`thub resources`** has a RESERVED column (who, until when). With `--json`, each runner has its `reservation`, and for your own reservation its `id` and `link`.
+- **`thub connect <client>`** keeps a live connection to your reserved board (README §5.6) and prints that reservation's link and a local port per device:
+  - **UARTs:** `127.0.0.1:5001` and up (`--uart-port`), for socat, picocom or pyserial's `socket://`.
+  - **ST-Links:** a GDB port each, `127.0.0.1:3333` and up (`--gdb-port`). Each connection starts its own OpenOCD on the Client; `--target <name>` gives the OpenOCD target.
+  - **Camera:** if the board has one (README §5.7), `http://127.0.0.1:8090/<reservation id>/video.ts` (`--video-port`) for VLC, ffplay or mpv. The URL is that reservation's own. `--video-udp <port>` also sends it as UDP.
+  - **Reconnecting:** it reconnects by itself (1 s, 2 s … 30 s). Serial terminals and video viewers stay connected through a reconnect; GDB has to connect again.
+  - **Exiting:** it exits with the reason when the reservation ends.
+  - **Options:** `--bind` and `--json`.
+- **`thub console <client> [--uart <n>]`** puts one UART of your reserved board in the terminal. Ctrl-] quits.
+- New dependency: `ws` 8.21.3.
 
 ### Changed
 
