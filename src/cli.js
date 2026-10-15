@@ -418,7 +418,8 @@ program
       }
       console.log(`${r.name} is reserved for you until ${formatDateTime(r.reservation.until)}.\n` +
         `Only your jobs run on it (thub run --client ${r.name} …); thub release ${r.name} when you're done.\n` +
-        `Its UARTs and SWD: thub connect ${r.name} (local ports), thub console ${r.name} (serial in this terminal).`);
+        `Its UARTs and SWD: thub connect ${r.name} (local ports), thub console ${r.name} (serial in this terminal).` +
+        (r.reservation.link ? `\nThis reservation's link: ${r.reservation.link}` : ''));
     }
     catch (err){
       fail(err);
@@ -447,9 +448,21 @@ program
 // through the Coordinator — `thub connect` on local TCP ports for any tool
 // (GDB, socat, pyserial), `thub console` right in this terminal. Both make
 // a dropped connection again by themselves, until the reservation ends.
-function remoteSession(name){
-  const { url, token } = resolveConnection(program.opts());
-  return new RemoteSession({ baseUrl: url, token, client: name, userAgent: `thub-agent/${version}` });
+// Each reservation has its own link (README §5.6): the one you hold now.
+// A later reservation of the same runner is a new link — run this again.
+async function remoteSession(name){
+  const { token } = resolveConnection(program.opts()),
+    { resources } = await client().get('/resources'),
+    r = resources.find((x) => x.name === name || x.id === name);
+  if (!r){
+    throw usageError(`Unknown client "${name}" (thub resources lists them)`);
+  }
+  if (!r.reservation?.link){
+    throw usageError(r.reservation
+      ? `${r.name} is reserved by ${r.reservation.by} — only their reservation's link connects`
+      : `${r.name} isn't reserved — thub reserve ${r.name} first`);
+  }
+  return new RemoteSession({ url: r.reservation.link, token, client: r.name, userAgent: `thub-agent/${version}` });
 }
 
 function onRemoteTrouble(session, log, cleanup){
@@ -473,7 +486,7 @@ program
   .option('--gdb-port <port>', 'Local GDB port of ST-Link 1 (ST-Link n: this + n - 1)', (v) => Number(v), 3333)
   .option('--bind <address>', 'Local address to listen on (another than loopback shares the board with your network)', '127.0.0.1')
   .option('--json', 'Print the ports as JSON once connected', false)
-  .action((name, opts) => {
+  .action(async (name, opts) => {
     try {
       if (opts.target !== undefined && !OPENOCD_TARGET_RE.test(opts.target)){
         throw usageError(`--target must be an OpenOCD target script name such as stm32f4x (got "${opts.target}")`);
@@ -483,7 +496,7 @@ program
           throw usageError(`${flag} must be a port number`);
         }
       }
-      const session = remoteSession(name),
+      const session = await remoteSession(name),
         log = (m) => console.error(m);
       let listening = null,
         until = null;
@@ -562,9 +575,9 @@ program
   .description('Your reserved board\'s UART in this terminal: its output here, your typing to the board. Ctrl-] quits')
   .argument('<client>', 'The runner you reserved (thub reserve)')
   .option('--uart <n>', 'Which UART (thub connect lists them)', (v) => Number(v), 1)
-  .action((name, opts) => {
+  .action(async (name, opts) => {
     try {
-      const session = remoteSession(name),
+      const session = await remoteSession(name),
         log = (m) => process.stderr.write(`\r\n— ${m} —\r\n`),
         tty = process.stdin.isTTY;
       let ch = null;

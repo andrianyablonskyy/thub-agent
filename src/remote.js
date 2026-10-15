@@ -16,7 +16,7 @@
 
 const net = require('node:net'),
   { EventEmitter } = require('node:events'),
-  { decodeData, dataMessages, parseControl, remoteUrl, backoffMs, REMOTE_CLOSE } = require('@andrian.yablonskyy/thub-common');
+  { decodeData, dataMessages, parseControl, backoffMs, REMOTE_CLOSE } = require('@andrian.yablonskyy/thub-common');
 
 // Without a ping from the Coordinator (every 30 s) for this long, the
 // connection is taken for dead and made again.
@@ -24,19 +24,18 @@ const PING_TIMEOUT_MS = 75_000,
   // HTTP answers to the upgrade that won't change by trying again.
   FINAL_STATUSES = new Set([401, 403, 404, 409]);
 
-// One WebSocket to /api/v1/resources/<client>/remote, made again whenever
-// it drops (1 s, 2 s, 4 s … 30 s apart) until the reservation ends or
-// stop(). Channels are opened with open(); a `persistent` one (a UART) is
+// One WebSocket to the reservation's own link (/api/v1/remote/<reservation>,
+// from GET /resources), made again whenever it drops (1 s, 2 s, 4 s … 30 s
+// apart) until that reservation ends or stop(). Channels are opened with open(); a `persistent` one (a UART) is
 // opened again on its own once the Client is back, a GDB one is closed —
 // a debugger's state doesn't survive a dropped connection anyway.
 //
 // Events: status ({ state, client, until }), devices ({ uarts, probes }),
 // disconnected ({ retryMs, reason }), connected, fatal (message).
 class RemoteSession extends EventEmitter{
-  constructor({ baseUrl, token, client, userAgent, WebSocket = require('ws') }){
+  constructor({ url, token, client, userAgent, WebSocket = require('ws') }){
     super();
-    Object.assign(this, { baseUrl, token, client, userAgent, WebSocket });
-    this.url = remoteUrl(baseUrl, `/resources/${encodeURIComponent(client)}/remote`);
+    Object.assign(this, { url, token, client, userAgent, WebSocket });
     this.ws = null;
     this.ready = false;
     this.stopped = false;
