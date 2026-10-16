@@ -2,6 +2,19 @@
 
 What changed in each release, newest first. `## Unreleased` collects the changes since the version on npm; `bin/publish` turns that heading into the version and date it releases.
 
+## Unreleased
+
+### Added
+
+- **`thub connect --json` streams NDJSON events** for tools such as the VS Code extension. The first line is `{"event": "ready", …}`: the same object as before, with `event` added, so existing readers still work. Then there's one line per change:
+  - `status` (`waiting` / `ready`, with the reservation's end);
+  - `disconnected` (retry delay, reason) and `connected` (`again`);
+  - `video` (the camera streams, or why not);
+  - `fatal` (e.g. *The reservation ended*), just before it exits.
+
+  The human messages still go to stderr.
+- **`thub whoami --json`**: whose key it is (`kind`, `user` or `name`, `group`), as the Agent API's `/me` returns it.
+
 ## 1.1.23 — 2026-10-15
 
 ### Changed

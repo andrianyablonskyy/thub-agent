@@ -487,7 +487,7 @@ program
   .option('--bind <address>', 'Local address to listen on (another than loopback shares the board with your network)', '127.0.0.1')
   .option('--video-port <port>', 'Local HTTP port of the board\'s USB camera stream, if it has one', (v) => Number(v), 8090)
   .option('--video-udp <port>', 'Also send the camera stream as UDP (MPEG-TS) to this local port, e.g. 5600', (v) => Number(v))
-  .option('--json', 'Print the ports as JSON once connected', false)
+  .option('--json', 'NDJSON on stdout: "ready" with the ports once connected, then status/disconnected/connected/video/fatal events', false)
   .action(async (name, opts) => {
     try {
       if (opts.target !== undefined && !OPENOCD_TARGET_RE.test(opts.target)){
@@ -500,7 +500,16 @@ program
         }
       }
       const session = await remoteSession(name),
-        log = (m) => console.error(m);
+        log = (m) => console.error(m),
+        // --json: NDJSON on stdout — `ready` (the ports, below), then one line
+        // per change, for tools such as the VS Code extension. The human
+        // messages still go to stderr.
+        emit = opts.json ? (e) => console.log(JSON.stringify(e)) : () => {};
+      session.on('status', (st) => emit({ event: 'status', state: st.state, client: st.client, until: st.until }));
+      session.on('disconnected', ({ retryMs, reason }) => emit({ event: 'disconnected', retryMs, reason: reason || null }));
+      session.on('connected', ({ again }) => emit({ event: 'connected', again }));
+      session.on('fatal', (message) => emit({ event: 'fatal', message }));
+      session.on('devices', (d) => d.camera && emit({ event: 'video', streaming: Boolean(d.camera.streaming), error: d.camera.error || null }));
       let listening = null,
         until = null;
       const cleanup = () => {
@@ -564,7 +573,7 @@ program
 function printConnection(name, link, until, ports, devices, opts, video){
   if (opts.json){
     return console.log(JSON.stringify({
-      client: name, link, until, ports: ports.map((p) => ({ kind: p.kind, ...p.device, host: opts.bind, port: p.port })),
+      event: 'ready', client: name, link, until, ports: ports.map((p) => ({ kind: p.kind, ...p.device, host: opts.bind, port: p.port })),
       video: video ? { camera: devices.camera.name, url: video.url, udp: video.udp } : null
     }));
   }
@@ -730,9 +739,11 @@ function describeMe(me){
 program
   .command('whoami')
   .description('Show whose access key this Agent uses')
-  .action(async () => {
+  .option('--json', 'Machine-readable output', false)
+  .action(async (opts) => {
     try {
-      console.log(describeMe(await client().get('/me')));
+      const me = await client().get('/me');
+      console.log(opts.json ? JSON.stringify(me) : describeMe(me));
     }
     catch (err){
       fail(err);
