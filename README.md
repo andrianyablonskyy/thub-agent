@@ -47,10 +47,11 @@ thub report   <jobId> [--post gitlab|bitbucket|github] [--commit-status]   The j
 thub resources                 List resources and their status
 thub reserve  <client> [--for <dur>]   Only your jobs run on this runner until then (default 1h)
 thub release  <client>                 End your reservation (maintainers: anyone's)
-thub connect  <client> [--target <name>]   Your reserved board's UARTs and SWD (GDB) on local ports
+thub connect  <client> [--target <name>] [--video-port <p>] [--video-udp <p>] [--json]   Your reserved board's UARTs, SWD (GDB) and camera on local ports
 thub console  <client> [--uart <n>]    A reserved board's UART in this terminal (Ctrl-] quits)
 thub jobs     [--mine] [--state <s>]   List recent jobs (a cli token: only its own; a ci token: all, or its own with --mine)
 thub config   set <key> <value>        Save coordinator URL / key / default user locally
+thub whoami   [--json]                 Whose access key this is (and the group its jobs run in)
 thub check-update                      Compare this Agent with the latest published version
 thub self-update [--to <x.y.z>]        Update this Agent with npm i -g
 thub --version
@@ -182,6 +183,13 @@ thub run --type sw --download-file https://does-not-exist.invalid/app.bin \
 **Its UARTs and SWD on your machine:** `thub connect lab-hw-01 --target stm32f4x` keeps a live connection to the reserved board and prints the link and a local port per device: UART 1 on `127.0.0.1:5001` (and up; `--uart-port`), ST-Link 1's GDB server on `127.0.0.1:3333` (and up; `--gdb-port`) — `arm-none-eabi-gdb -ex "target extended-remote 127.0.0.1:3333"`, `socat -,raw,echo=0 TCP:127.0.0.1:5001`, or pyserial's `socket://127.0.0.1:5001`. Each GDB connection starts its own OpenOCD on the Client with `target/<name>.cfg` (`--target`, else the probe's OpenOCD target set on the runner card). `thub console lab-hw-01 --uart 1` puts a UART right in your terminal (Ctrl-] quits). A dropped connection is made again by itself (a UART port stays connected through it, GDB has to reconnect); the session ends with the reservation. Each reservation has its own link (`thub reserve` prints it): reserve again later and `thub connect` again for the new one.
 
 **Watch the board:** on a runner with a USB camera (label `video-stream`), its stream starts with your reservation, and `thub connect` prints a local link of that reservation's own — `http://127.0.0.1:8090/<reservation id>/video.ts` (`--video-port`) for VLC, ffplay or mpv; `--video-udp 5600` also sends it as UDP to `udp://127.0.0.1:5600`.
+
+**Machine-readable output.** `--json` on `resources`, `jobs`, `status`, `reserve`, `release`, `power` and `whoami` prints JSON instead of text. `thub connect --json` prints **NDJSON** on stdout, for tools that follow a session (human messages still go to stderr):
+- first `{"event":"ready","client":…,"link":…,"until":…,"ports":[…],"video":…}`, once the board's Client is linked;
+- then one line per change: `status` (`waiting` / `ready`), `disconnected` (`retryMs`, `reason`), `connected` (`again`), `video` (`streaming`, `error`);
+- `fatal` (`message`) just before it exits, e.g. when the reservation ends (exit code 4).
+
+**In VS Code:** the [thub for VS Code](https://marketplace.visualstudio.com/items?itemName=adsystem-pro.thub-vscode) extension does all of this from the editor: reserving, flashing (also after each build), debugging through Cortex-Debug, serial terminals and the camera. It runs this Agent underneath, so install the Agent first.
 
 **Who submitted a job** comes from your key: your username (a CI token: its name), shown on the dashboard, in `thub jobs`, on the Client's console and as `JOB_USER`. There's no `--user`.
 
