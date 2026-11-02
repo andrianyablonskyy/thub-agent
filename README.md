@@ -16,6 +16,8 @@ Then create a CI token or an access key on its dashboard for `thub`.
 
 ## Install
 
+The Agent runs on **Node.js 24 or newer** (and npm) on every workstation or CI runner that invokes `thub`. Install Node.js from [nodejs.org](https://nodejs.org/en/download) for your operating system, make sure npm is included and Node.js is on `PATH`, then verify with `node --version` and `npm --version`. Windows users can use the Node.js Windows Installer (`.msi`); restart PowerShell and VS Code after installation so both inherit the updated `PATH`.
+
 ```bash
 npm i -g @andrian.yablonskyy/thub-agent
 # or, one-off in CI:

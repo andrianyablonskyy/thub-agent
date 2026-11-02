@@ -7,6 +7,11 @@ What changed in each release, newest first. `## Unreleased` collects the changes
 ### Added
 
 - **`thub connect --rtt <index=address,size[,channel]>`** opens a local read-only TCP listener for an OpenOCD SEGGER RTT up-channel. It searches the specified RAM range, supports multiple ST-Links, and defaults the channel to 0.
+- **`thub connect --forward <name=port>`** forwards one or more named TCP services on the reserved Client's loopback interface to automatically assigned local ports.
+
+### Changed
+
+- **Windows workstation support:** `thub` stores configuration in `%APPDATA%\thub\agent.json`; global npm self-updates use the running Node executable or a PowerShell-invoked npm shim and do not attempt Unix `sudo` escalation. Requires Node.js 24 or newer.
 
 ## 1.1.24 — 2026-10-16
 
