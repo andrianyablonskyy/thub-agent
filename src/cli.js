@@ -20,7 +20,7 @@ const { Command } = require('commander'),
     ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime,
     parseEnvList, POWER_ACTIONS, DEFAULT_RESET_DELAY_SEC, MAX_RESET_DELAY_SEC, powerRequestErrors, OPENOCD_TARGET_RE
   } = require('@andrian.yablonskyy/thub-common'),
-  { RemoteSession, listenLocal, serveVideo } = require('./remote'),
+  { RemoteSession, listenLocal, serveVideo, parseForwards } = require('./remote'),
   { resolveConnection, writeConfigFile, readConfigFile, CONFIG_PATH } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming'),
@@ -479,7 +479,7 @@ function onRemoteTrouble(session, log, cleanup){
 
 program
   .command('connect')
-  .description('Share your reserved board\'s UARTs and SWD (GDB via OpenOCD) on local TCP ports, over a live connection that reconnects by itself')
+  .description('Share your reserved board\'s UARTs, SWD, camera and Client services on local ports, over a live connection that reconnects')
   .argument('<client>', 'The runner you reserved (thub reserve)')
   .option('--target <name>', 'OpenOCD target for SWD, e.g. stm32f4x (target/<name>.cfg; default: the probe\'s openocdTarget on the Client)')
   .option('--uart-port <port>', 'Local port of UART 1 (UART n: this + n - 1)', (v) => Number(v), 5001)
@@ -487,9 +487,16 @@ program
   .option('--bind <address>', 'Local address to listen on (another than loopback shares the board with your network)', '127.0.0.1')
   .option('--video-port <port>', 'Local HTTP port of the board\'s USB camera stream, if it has one', (v) => Number(v), 8090)
   .option('--video-udp <port>', 'Also send the camera stream as UDP (MPEG-TS) to this local port, e.g. 5600', (v) => Number(v))
+  .option('--forward <name=port>', 'Forward a named service on localhost of the Client (repeatable)', collectRepeatable, [])
   .option('--json', 'NDJSON on stdout: "ready" with the ports once connected, then status/disconnected/connected/video/fatal events', false)
   .action(async (name, opts) => {
     try {
+      try {
+        opts.forward = parseForwards(opts.forward);
+      }
+      catch (err){
+        throw usageError(err.message);
+      }
       if (opts.target !== undefined && !OPENOCD_TARGET_RE.test(opts.target)){
         throw usageError(`--target must be an OpenOCD target script name such as stm32f4x (got "${opts.target}")`);
       }
@@ -538,7 +545,8 @@ program
         lastCamera = camera;
         listening = (async () => {
           const local = await listenLocal(session, devices, {
-              host: opts.bind, uartBase: opts.uartPort, gdbBase: opts.gdbPort, target: opts.target, log
+              host: opts.bind, uartBase: opts.uartPort, gdbBase: opts.gdbPort, target: opts.target,
+              forwards: opts.forward, log
             }),
             // The camera (README §5.7) on a URL with this reservation's own id in it.
             video = devices.camera
@@ -549,7 +557,7 @@ program
           return { ...local, video };
         })();
         listening
-          .then(({ ports, video }) => printConnection(name, session.url, until, ports, devices, opts, video))
+          .then(({ ports, forwards, video }) => printConnection(name, session.url, until, ports, forwards, devices, opts, video))
           .catch((err) => {
             cleanup();
             fail(usageError(err.code === 'EADDRINUSE'
@@ -570,10 +578,11 @@ program
   });
 
 // The connection link and how to use each port.
-function printConnection(name, link, until, ports, devices, opts, video){
+function printConnection(name, link, until, ports, forwards, devices, opts, video){
   if (opts.json){
     return console.log(JSON.stringify({
       event: 'ready', client: name, link, until, ports: ports.map((p) => ({ kind: p.kind, ...p.device, host: opts.bind, port: p.port })),
+      forwards: forwards.map((f) => ({ name: f.name, clientPort: f.clientPort, host: opts.bind, port: f.port })),
       video: video ? { camera: devices.camera.name, url: video.url, udp: video.udp } : null
     }));
   }
@@ -603,8 +612,11 @@ function printConnection(name, link, until, ports, devices, opts, video){
       `        vlc ${video.url}  ·  ffplay -fflags nobuffer ${video.url}` +
       (video.udp ? `\n        UDP: ${video.udp}  (ffplay -fflags nobuffer ${video.udp})` : '  ·  UDP too: --video-udp 5600'));
   }
-  if (!ports.length && !video){
-    lines.push(`${name} has no UARTs, ST-Links or camera.`);
+  for (const f of forwards){
+    lines.push(`Forward  ${f.name}  localhost:${f.clientPort}  ${host}:${f.port}`);
+  }
+  if (!ports.length && !video && !forwards.length){
+    lines.push(`${name} has no UARTs, ST-Links, camera or forwarded services.`);
   }
   if (devices.uarts.length && !devices.serial){
     lines.push('', 'UARTs won\'t open: the \'serialport\' package isn\'t installed on the Client host.');

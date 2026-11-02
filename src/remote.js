@@ -18,7 +18,7 @@ const net = require('node:net'),
   http = require('node:http'),
   dgram = require('node:dgram'),
   { EventEmitter } = require('node:events'),
-  { decodeData, dataMessages, parseControl, backoffMs, REMOTE_CLOSE } = require('@andrian.yablonskyy/thub-common');
+  { decodeData, dataMessages, parseControl, backoffMs, REMOTE_CLOSE, SERVICE_NAME_RE } = require('@andrian.yablonskyy/thub-common');
 
 // Without a ping from the Coordinator (every 30 s) for this long, the
 // connection is taken for dead and made again.
@@ -33,9 +33,9 @@ const PING_TIMEOUT_MS = 75_000,
 
 // One WebSocket to the reservation's own link (/api/v1/remote/<reservation>,
 // from GET /resources), made again whenever it drops (1 s, 2 s, 4 s … 30 s
-// apart) until that reservation ends or stop(). Channels are opened with open(); a `persistent` one (a UART) is
-// opened again on its own once the Client is back, a GDB one is closed —
-// a debugger's state doesn't survive a dropped connection anyway.
+// apart) until that reservation ends or stop(). Channels are opened with open(); a `persistent` one (a UART or
+// video stream) is opened again on its own once the Client is back, while a
+// GDB or service connection is closed.
 //
 // Events: status ({ state, client, until }), devices ({ uarts, probes }),
 // disconnected ({ retryMs, reason }), connected, fatal (message).
@@ -265,10 +265,9 @@ class RemoteSession extends EventEmitter{
   }
 }
 
-// `thub connect`: a local TCP port per UART (every connection to it sees the
-// board's output and types to it) and per ST-Link (a GDB server: each
-// connection gets its own OpenOCD on the Client). Returns the servers.
-function listenLocal(session, devices, { host, uartBase, gdbBase, target, log }){
+// `thub connect`: local TCP ports for UARTs, ST-Links, and named services on
+// the Client's loopback interface. Returns the servers.
+function listenLocal(session, devices, { host, uartBase, gdbBase, target, forwards = [], log }){
   const servers = [],
     bridge = (kind, index, opts) => (sock) => {
       sock.setNoDelay(true);
@@ -281,10 +280,10 @@ function listenLocal(session, devices, { host, uartBase, gdbBase, target, log })
       };
       ch = session.open(kind, index, {
         data: (buf) => sock.write(buf),
-        note: (text) => log(`${kind === 'uart' ? 'UART' : 'SWD'} ${index}: ${text}`),
+        note: (text) => log(kind === 'service' ? `${opts.name}: ${text}` : `${kind === 'uart' ? 'UART' : 'SWD'} ${index}: ${text}`),
         closed: (reason) => {
           ch = null;
-          log(`${kind === 'uart' ? 'UART' : 'SWD'} ${index}: ${reason}`);
+          log(kind === 'service' ? `${opts.name}: ${reason}` : `${kind === 'uart' ? 'UART' : 'SWD'} ${index}: ${reason}`);
           sock.destroy();
         }
       }, opts);
@@ -307,8 +306,16 @@ function listenLocal(session, devices, { host, uartBase, gdbBase, target, log })
     ...devices.probes.map(async (p) => ({
       kind: 'swd', device: p,
       port: await listen(gdbBase ? gdbBase + p.index - 1 : 0, bridge('swd', p.index, { extra: target ? { target } : {} }))
+    })),
+    ...forwards.map(async ({ name, port: clientPort }) => ({
+      name, clientPort,
+      port: await listen(0, bridge('service', 1, { extra: { name, port: clientPort }, name }))
     }))
-  ]).then((ports) => ({ servers, ports }));
+  ]).then((results) => ({
+    servers,
+    ports: results.filter((r) => r.kind),
+    forwards: results.filter((r) => r.name)
+  }));
 }
 
 // `thub connect`: the board's USB camera (README §5.7) — H.264 in MPEG-TS,
@@ -366,4 +373,23 @@ function serveVideo(session, { host, port, reservation, udpPort = null, log }){
   });
 }
 
-module.exports = { RemoteSession, listenLocal, serveVideo };
+function parseForwards(values){
+  const seen = new Set();
+  return values.map((value) => {
+    const split = value.lastIndexOf('='),
+      name = value.slice(0, split).trim(),
+      portText = value.slice(split + 1),
+      port = Number(portText);
+    if (split < 1 || !SERVICE_NAME_RE.test(name) || !/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65535){
+      throw new Error(`--forward ${value}: use a service name and Client port, e.g. --forward "Web UI=3000"`);
+    }
+    const key = name.toLowerCase();
+    if (seen.has(key)){
+      throw new Error(`--forward: service name "${name}" is repeated`);
+    }
+    seen.add(key);
+    return { name, port };
+  });
+}
+
+module.exports = { RemoteSession, listenLocal, serveVideo, parseForwards };
