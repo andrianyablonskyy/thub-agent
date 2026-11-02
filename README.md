@@ -22,11 +22,26 @@ npm i -g @andrian.yablonskyy/thub-agent
 npx -y @andrian.yablonskyy/thub-agent run --type sw --download-file "$IMAGE_URL" --command ./ci/test.sh --wait
 ```
 
+### Windows workstation
+
+Install **Node.js 24 or newer** from [nodejs.org](https://nodejs.org/) and ensure the installer adds Node.js and npm to `PATH`. Open a new PowerShell terminal, then install and configure the Agent:
+
+```powershell
+node --version
+npm --version
+npm install --global @andrian.yablonskyy/thub-agent
+thub config set url https://thub.example.com
+thub config set key thk_...
+thub whoami
+```
+
+The Agent stores its config at `%APPDATA%\thub\agent.json`. If npm reports a permissions error, use a PowerShell terminal started as Administrator or configure npm's global prefix for your user; automatic self-updates do not prompt for elevation. To use the Agent from VS Code, install the **thub — remote boards** extension and keep the npm global executable directory on the VS Code process's `PATH`.
+
 ## Configuration
 
-Read from flags (`--url`, `--key`), then environment (`THUB_URL`, `THUB_KEY`), then `~/.config/thub/agent.json`, then a bundled default. `url`/`key` are required by the time a command actually talks to the Coordinator; `group`/`user` are optional everywhere.
+Read from flags (`--url`, `--key`), then environment (`THUB_URL`, `THUB_KEY`), then `%APPDATA%\thub\agent.json` on Windows or `~/.config/thub/agent.json` elsewhere, then a bundled default. `url`/`key` are required by the time a command actually talks to the Coordinator; `group`/`user` are optional everywhere.
 
-`npm install -g` creates `~/.config/thub/agent.json` for you (blank `url`/`token`, so nothing works until you set them) if it doesn't already exist — a re-install never overwrites it. Fill it in with `thub config set`:
+`npm install -g` creates the per-user Agent config for you (blank `url`/`token`, so nothing works until you set them) if it doesn't already exist — a re-install never overwrites it. Fill it in with `thub config set`:
 
 ```bash
 thub config set url https://thub.example.com
@@ -57,7 +72,7 @@ thub self-update [--to <x.y.z>]        Update this Agent with npm i -g
 thub --version
 ```
 
-**Self-update.** An admin can request an update for this agent (or all agents) on the Coordinator's Agents page. The next command that talks to the Coordinator then installs it with `npm i -g` (retrying through `sudo` on an interactive terminal) and re-runs itself on the new version. If the install fails — e.g. no permission in CI — it prints the manual command and carries on with the current version; a run never fails because of an update. Set `THUB_NO_SELF_UPDATE=1` to opt out.
+**Self-update.** An admin can request an update for this agent (or all agents) on the Coordinator's Agents page. The next command that talks to the Coordinator then installs it with `npm i -g` (retrying through `sudo` on an interactive Unix terminal) and re-runs itself on the new version. On Windows, run the terminal with the permissions needed by the npm global prefix; the Agent never tries to elevate automatically. If the install fails — e.g. no permission in CI — it prints the manual command and carries on with the current version; a run never fails because of an update. Set `THUB_NO_SELF_UPDATE=1` to opt out.
 
 Key options for `thub run`. **On the Client** names the environment variable the job's command finds the option's value in (see *Client environment variables* below):
 

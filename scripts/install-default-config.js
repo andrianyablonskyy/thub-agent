@@ -16,10 +16,8 @@
 'use strict';
 
 const fs = require('node:fs'),
-  os = require('node:os'),
   path = require('node:path'),
-
-  CONFIG_PATH = path.join(os.homedir(), '.config', 'thub', 'agent.json'),
+  { CONFIG_PATH } = require('../src/config'),
 
   // Deliberately not a copy of the bundled config.json (which points at
   // http://localhost:8000 for zero-setup `npm run agent` in the monorepo)

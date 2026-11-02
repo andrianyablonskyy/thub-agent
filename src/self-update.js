@@ -31,7 +31,7 @@ function installAgent(target){
     if (npmInstallGlobal(PACKAGES.agent, target, { stdio: NPM_STDIO, retryDelaysSec: [] }) === 0){
       return true;
     }
-    if (process.getuid?.() !== 0 && process.stdin.isTTY){
+    if (process.platform !== 'win32' && process.getuid?.() !== 0 && process.stdin.isTTY){
       console.error('thub: retrying with sudo');
       return spawnSync('sudo', [npmBin(), 'i', '-g', '--prefer-online', `${PACKAGES.agent}@${target}`], { stdio: NPM_STDIO }).status === 0;
     }
@@ -64,7 +64,10 @@ async function applyRequestedUpdate(api){
 
   console.error(`thub: updating v${version} -> v${updateTo} (requested by the Coordinator)`);
   if (!installAgent(updateTo)){
-    console.error(`thub: update failed — continuing on v${version}. To update by hand: sudo npm i -g ${PACKAGES.agent}@${updateTo}`);
+    const installCommand = process.platform === 'win32'
+      ? `npm i -g ${PACKAGES.agent}@${updateTo} (use an elevated terminal if required)`
+      : `sudo npm i -g ${PACKAGES.agent}@${updateTo}`;
+    console.error(`thub: update failed — continuing on v${version}. To update by hand: ${installCommand}`);
     return;
   }
   const rerun = spawnSync(process.execPath, process.argv.slice(1), {

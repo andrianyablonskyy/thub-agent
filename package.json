@@ -8,6 +8,9 @@
     "thub": "./src/cli.js"
   },
   "main": "src/cli.js",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "test": "node --test test/*.test.js",
     "postinstall": "node scripts/install-default-config.js",

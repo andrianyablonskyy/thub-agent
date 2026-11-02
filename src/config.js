@@ -18,8 +18,10 @@ const fs = require('node:fs'),
   path = require('node:path');
 
 // §7: "Configuration is read from flags, then environment (THUB_URL,
-// THUB_KEY), then ~/.config/thub/agent.json."
-const CONFIG_PATH = path.join(os.homedir(), '.config', 'thub', 'agent.json'),
+// THUB_KEY), then the per-user thub config file."
+const CONFIG_PATH = process.platform === 'win32'
+    ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'thub', 'agent.json')
+    : path.join(os.homedir(), '.config', 'thub', 'agent.json'),
 
   // Bundled with the package as a last-resort default, below the user's own
   // config file, so `thub` has something to fall back on before `config set`
