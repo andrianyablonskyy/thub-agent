@@ -18,7 +18,7 @@ const net = require('node:net'),
   http = require('node:http'),
   dgram = require('node:dgram'),
   { EventEmitter } = require('node:events'),
-  { decodeData, dataMessages, parseControl, backoffMs, REMOTE_CLOSE, SERVICE_NAME_RE } = require('@andrian.yablonskyy/thub-common');
+  { decodeData, dataMessages, parseControl, backoffMs, REMOTE_CLOSE, SERVICE_NAME_RE, validRttConfig } = require('@andrian.yablonskyy/thub-common');
 
 // Without a ping from the Coordinator (every 30 s) for this long, the
 // connection is taken for dead and made again.
@@ -265,9 +265,9 @@ class RemoteSession extends EventEmitter{
   }
 }
 
-// `thub connect`: local TCP ports for UARTs, ST-Links, and named services on
+// `thub connect`: local TCP ports for UARTs, ST-Links, RTT logs, and named services on
 // the Client's loopback interface. Returns the servers.
-function listenLocal(session, devices, { host, uartBase, gdbBase, target, forwards = [], log }){
+function listenLocal(session, devices, { host, uartBase, gdbBase, target, forwards = [], rtts = [], log }){
   const servers = [],
     bridge = (kind, index, opts) => (sock) => {
       sock.setNoDelay(true);
@@ -280,14 +280,14 @@ function listenLocal(session, devices, { host, uartBase, gdbBase, target, forwar
       };
       ch = session.open(kind, index, {
         data: (buf) => sock.write(buf),
-        note: (text) => log(kind === 'service' ? `${opts.name}: ${text}` : `${kind === 'uart' ? 'UART' : 'SWD'} ${index}: ${text}`),
+        note: (text) => log(kind === 'service' ? `${opts.name}: ${text}` : `${kind === 'uart' ? 'UART' : kind === 'rtt' ? 'RTT' : 'SWD'} ${index}: ${text}`),
         closed: (reason) => {
           ch = null;
-          log(kind === 'service' ? `${opts.name}: ${reason}` : `${kind === 'uart' ? 'UART' : 'SWD'} ${index}: ${reason}`);
+          log(kind === 'service' ? `${opts.name}: ${reason}` : `${kind === 'uart' ? 'UART' : kind === 'rtt' ? 'RTT' : 'SWD'} ${index}: ${reason}`);
           sock.destroy();
         }
       }, opts);
-      sock.on('data', (buf) => ch !== null && session.write(ch, buf));
+      sock.on('data', (buf) => ch !== null && !opts.readOnly && session.write(ch, buf));
       sock.on('close', end);
       sock.on('error', end);
     },
@@ -306,6 +306,14 @@ function listenLocal(session, devices, { host, uartBase, gdbBase, target, forwar
     ...devices.probes.map(async (p) => ({
       kind: 'swd', device: p,
       port: await listen(gdbBase ? gdbBase + p.index - 1 : 0, bridge('swd', p.index, { extra: target ? { target } : {} }))
+    })),
+    ...rtts.map(async (rtt) => ({
+      kind: 'rtt',
+      device: { index: rtt.index, label: `RTT channel ${rtt.channel}`, channel: rtt.channel },
+      port: await listen(0, bridge('rtt', rtt.index, {
+        readOnly: true,
+        extra: { address: rtt.address, size: rtt.size, channel: rtt.channel, ...(target ? { target } : {}) }
+      }))
     })),
     ...forwards.map(async ({ name, port: clientPort }) => ({
       name, clientPort,
@@ -392,4 +400,25 @@ function parseForwards(values){
   });
 }
 
-module.exports = { RemoteSession, listenLocal, serveVideo, parseForwards };
+function parseRtts(values){
+  const seen = new Set();
+  return values.map((value) => {
+    const split = value.indexOf('='),
+      index = Number(value.slice(0, split)),
+      fields = value.slice(split + 1).split(','),
+      [address, size, channelText] = fields,
+      channel = channelText === undefined ? 0 : Number(channelText);
+    if (split < 1 || !/^\d+$/.test(value.slice(0, split)) || !Number.isInteger(index) || index < 1 || index > 64 ||
+        fields.length < 2 || fields.length > 3 || (channelText !== undefined && !/^\d+$/.test(channelText)) ||
+        !validRttConfig({ address, size, channel })){
+      throw new Error(`--rtt ${value}: use a probe index, RAM address, search size, and optional channel, e.g. --rtt 1=0x20000000,0x10000,0`);
+    }
+    if (seen.has(index)){
+      throw new Error(`--rtt: ST-Link ${index} is repeated`);
+    }
+    seen.add(index);
+    return { index, address, size, channel };
+  });
+}
+
+module.exports = { RemoteSession, listenLocal, serveVideo, parseForwards, parseRtts };

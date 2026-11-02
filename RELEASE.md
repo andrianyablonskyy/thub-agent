@@ -2,6 +2,12 @@
 
 What changed in each release, newest first. `## Unreleased` collects the changes since the version on npm; `bin/publish` turns that heading into the version and date it releases.
 
+## Unreleased
+
+### Added
+
+- **`thub connect --rtt <index=address,size[,channel]>`** opens a local read-only TCP listener for an OpenOCD SEGGER RTT up-channel. It searches the specified RAM range, supports multiple ST-Links, and defaults the channel to 0.
+
 ## 1.1.24 — 2026-10-16
 
 ### Added

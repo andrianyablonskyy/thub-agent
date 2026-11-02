@@ -47,7 +47,7 @@ thub report   <jobId> [--post gitlab|bitbucket|github] [--commit-status]   The j
 thub resources                 List resources and their status
 thub reserve  <client> [--for <dur>]   Only your jobs run on this runner until then (default 1h)
 thub release  <client>                 End your reservation (maintainers: anyone's)
-thub connect  <client> [--target <name>] [--forward <name=port>]... [--video-port <p>] [--video-udp <p>] [--json]   Your reserved board's UARTs, SWD (GDB), camera and Client services
+thub connect  <client> [--target <name>] [--forward <name=port>]... [--rtt <index=address,size[,channel]>]... [--video-port <p>] [--video-udp <p>] [--json]   Your reserved board's UARTs, SWD (GDB), RTT, camera and Client services
 thub console  <client> [--uart <n>]    A reserved board's UART in this terminal (Ctrl-] quits)
 thub jobs     [--mine] [--state <s>]   List recent jobs (a cli token: only its own; a ci token: all, or its own with --mine)
 thub config   set <key> <value>        Save coordinator URL / key / default user locally
@@ -185,6 +185,8 @@ thub run --type sw --download-file https://does-not-exist.invalid/app.bin \
 **Watch the board:** on a runner with a USB camera (label `video-stream`), its stream starts with your reservation, and `thub connect` prints a local link of that reservation's own — `http://127.0.0.1:8090/<reservation id>/video.ts` (`--video-port`) for VLC, ffplay or mpv; `--video-udp 5600` also sends it as UDP to `udp://127.0.0.1:5600`.
 
 **Forward a Client-host service:** `thub connect lab-hw-01 --forward "Web UI=3000"` opens a local TCP port that carries traffic to `127.0.0.1:3000` on the reserved Client host. The Agent chooses and prints its local port; multiple `--forward "name=port"` options are supported. The Client connects only to its own loopback interface, and the forward ends when `thub connect` or the reservation ends.
+
+**Read SEGGER RTT logs:** `thub connect lab-hw-01 --rtt 1=0x20000000,0x10000,0` searches the given RAM range for the RTT control block and opens a local read-only TCP listener for up-channel 0. The optional channel defaults to 0; repeat `--rtt` for other ST-Links. RTT uses OpenOCD and the selected ST-Link exclusively until the local reader disconnects, so do not use that probe for GDB at the same time.
 
 **Machine-readable output.** `--json` on `resources`, `jobs`, `status`, `reserve`, `release`, `power` and `whoami` prints JSON instead of text. `thub connect --json` prints **NDJSON** on stdout, for tools that follow a session (human messages still go to stderr):
 - first `{"event":"ready","client":…,"link":…,"until":…,"ports":[…],"forwards":[…],"video":…}`, once the board's Client is linked;

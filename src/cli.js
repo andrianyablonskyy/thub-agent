@@ -20,7 +20,7 @@ const { Command } = require('commander'),
     ApiClient, EXIT_CODES, ACTIVE_JOB_STATES, exitCodeForJobState, PACKAGES, fetchLatestVersion, isNewer, isValidVersion, formatDateTime,
     parseEnvList, POWER_ACTIONS, DEFAULT_RESET_DELAY_SEC, MAX_RESET_DELAY_SEC, powerRequestErrors, OPENOCD_TARGET_RE
   } = require('@andrian.yablonskyy/thub-common'),
-  { RemoteSession, listenLocal, serveVideo, parseForwards } = require('./remote'),
+  { RemoteSession, listenLocal, serveVideo, parseForwards, parseRtts } = require('./remote'),
   { resolveConnection, writeConfigFile, readConfigFile, CONFIG_PATH } = require('./config'),
   { parseDurationSec } = require('./duration'),
   { followJob } = require('./streaming'),
@@ -479,7 +479,7 @@ function onRemoteTrouble(session, log, cleanup){
 
 program
   .command('connect')
-  .description('Share your reserved board\'s UARTs, SWD, camera and Client services on local ports, over a live connection that reconnects')
+  .description('Share your reserved board\'s UARTs, SWD, RTT logs, camera and Client services on local ports, over a live connection that reconnects')
   .argument('<client>', 'The runner you reserved (thub reserve)')
   .option('--target <name>', 'OpenOCD target for SWD, e.g. stm32f4x (target/<name>.cfg; default: the probe\'s openocdTarget on the Client)')
   .option('--uart-port <port>', 'Local port of UART 1 (UART n: this + n - 1)', (v) => Number(v), 5001)
@@ -488,11 +488,13 @@ program
   .option('--video-port <port>', 'Local HTTP port of the board\'s USB camera stream, if it has one', (v) => Number(v), 8090)
   .option('--video-udp <port>', 'Also send the camera stream as UDP (MPEG-TS) to this local port, e.g. 5600', (v) => Number(v))
   .option('--forward <name=port>', 'Forward a named service on localhost of the Client (repeatable)', collectRepeatable, [])
+  .option('--rtt <index=address,size[,channel]>', 'Read an ST-Link RTT up-channel over a local TCP port (repeatable)', collectRepeatable, [])
   .option('--json', 'NDJSON on stdout: "ready" with the ports once connected, then status/disconnected/connected/video/fatal events', false)
   .action(async (name, opts) => {
     try {
       try {
         opts.forward = parseForwards(opts.forward);
+        opts.rtt = parseRtts(opts.rtt);
       }
       catch (err){
         throw usageError(err.message);
@@ -546,7 +548,7 @@ program
         listening = (async () => {
           const local = await listenLocal(session, devices, {
               host: opts.bind, uartBase: opts.uartPort, gdbBase: opts.gdbPort, target: opts.target,
-              forwards: opts.forward, log
+              forwards: opts.forward, rtts: opts.rtt, log
             }),
             // The camera (README §5.7) on a URL with this reservation's own id in it.
             video = devices.camera
@@ -599,6 +601,10 @@ function printConnection(name, link, until, ports, forwards, devices, opts, vide
         `        or: socat -,raw,echo=0 TCP:${host}:${port}  ·  pyserial: serial_for_url('socket://${host}:${port}')`);
     }
     else {
+      if (kind === 'rtt'){
+        lines.push(`RTT ${d.index}  ${d.label}  tcp://${host}:${port}  (read-only text stream)`);
+        continue;
+      }
       const target = opts.target || d.target;
       lines.push(`SWD  ${d.index}  ${d.label}${d.serial ? ` (ST-Link ${d.serial})` : ''}  ` +
         `OpenOCD target ${target || '— none: add --target <name>'}  GDB: ${host}:${port}`,
