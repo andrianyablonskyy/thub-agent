@@ -2,6 +2,12 @@
 
 What changed in each release, newest first. `## Unreleased` collects the changes since the version on npm; `bin/publish` turns that heading into the version and date it releases.
 
+## Unreleased
+
+### Changed
+
+- **`thub connect` handles occupied default local ports:** when a default UART, GDB or video port is already in use, it selects an available local port and reports it. Explicitly requested ports still report an error.
+
 ## 1.1.25 — 2026-11-02
 
 ### Added

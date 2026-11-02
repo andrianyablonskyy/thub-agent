@@ -267,7 +267,7 @@ class RemoteSession extends EventEmitter{
 
 // `thub connect`: local TCP ports for UARTs, ST-Links, RTT logs, and named services on
 // the Client's loopback interface. Returns the servers.
-function listenLocal(session, devices, { host, uartBase, gdbBase, target, forwards = [], rtts = [], log }){
+function listenLocal(session, devices, { host, uartBase, gdbBase, target, forwards = [], rtts = [], fallbackPorts = {}, log }){
   const servers = [],
     bridge = (kind, index, opts) => (sock) => {
       sock.setNoDelay(true);
@@ -291,39 +291,67 @@ function listenLocal(session, devices, { host, uartBase, gdbBase, target, forwar
       sock.on('close', end);
       sock.on('error', end);
     },
-    listen = (port, onConn) => new Promise((resolve, reject) => {
+    listenAt = (port, onConn) => new Promise((resolve, reject) => {
       const srv = net.createServer(onConn);
-      srv.once('error', reject);
+      srv.once('error', (err) => {
+        err.port ??= port;
+        reject(err);
+      });
       srv.listen(port, host, () => {
         servers.push(srv);
         resolve(srv.address().port);
       });
-    });
-  return Promise.all([
-    ...devices.uarts.map(async (u) => ({
-      kind: 'uart', device: u, port: await listen(uartBase ? uartBase + u.index - 1 : 0, bridge('uart', u.index, { persistent: true }))
-    })),
-    ...devices.probes.map(async (p) => ({
-      kind: 'swd', device: p,
-      port: await listen(gdbBase ? gdbBase + p.index - 1 : 0, bridge('swd', p.index, { extra: target ? { target } : {} }))
-    })),
-    ...rtts.map(async (rtt) => ({
-      kind: 'rtt',
-      device: { index: rtt.index, label: `RTT channel ${rtt.channel}`, channel: rtt.channel },
-      port: await listen(0, bridge('rtt', rtt.index, {
-        readOnly: true,
-        extra: { address: rtt.address, size: rtt.size, channel: rtt.channel, ...(target ? { target } : {}) }
+    }),
+    listen = async (port, onConn, fallbackLabel) => {
+      try {
+        return await listenAt(port, onConn);
+      }
+      catch (err){
+        if (err.code !== 'EADDRINUSE' || !fallbackLabel){
+          throw err;
+        }
+        const availablePort = await listenAt(0, onConn);
+        log(`Default local ${fallbackLabel} port ${port} is in use; using ${availablePort} instead.`);
+        return availablePort;
+      }
+    },
+    pending = [
+      ...devices.uarts.map(async (u) => ({
+        kind: 'uart', device: u,
+        port: await listen(uartBase ? uartBase + u.index - 1 : 0, bridge('uart', u.index, { persistent: true }),
+          fallbackPorts.uart ? 'UART' : null)
+      })),
+      ...devices.probes.map(async (p) => ({
+        kind: 'swd', device: p,
+        port: await listen(gdbBase ? gdbBase + p.index - 1 : 0, bridge('swd', p.index, { extra: target ? { target } : {} }),
+          fallbackPorts.gdb ? 'GDB' : null)
+      })),
+      ...rtts.map(async (rtt) => ({
+        kind: 'rtt',
+        device: { index: rtt.index, label: `RTT channel ${rtt.channel}` },
+        port: await listen(0, bridge('rtt', rtt.index, {
+          readOnly: true,
+          extra: { address: rtt.address, size: rtt.size, channel: rtt.channel, ...(target ? { target } : {}) }
+        }))
+      })),
+      ...forwards.map(async ({ name, port: clientPort }) => ({
+        name, clientPort,
+        port: await listen(0, bridge('service', 1, { extra: { name, port: clientPort }, name }))
       }))
-    })),
-    ...forwards.map(async ({ name, port: clientPort }) => ({
-      name, clientPort,
-      port: await listen(0, bridge('service', 1, { extra: { name, port: clientPort }, name }))
-    }))
-  ]).then((results) => ({
-    servers,
-    ports: results.filter((r) => r.kind),
-    forwards: results.filter((r) => r.name)
-  }));
+    ];
+  return Promise.allSettled(pending).then((results) => {
+    const failure = results.find((result) => result.status === 'rejected');
+    if (failure){
+      servers.forEach((srv) => srv.close());
+      throw failure.reason;
+    }
+    const opened = results.map((result) => result.value);
+    return {
+      servers,
+      ports: opened.filter((r) => r.kind),
+      forwards: opened.filter((r) => r.name)
+    };
+  });
 }
 
 // `thub connect`: the board's USB camera (README §5.7) — H.264 in MPEG-TS,
@@ -332,7 +360,7 @@ function listenLocal(session, devices, { host, uartBase, gdbBase, target, forwar
 // (VLC, ffplay, mpv). Each viewer is a channel of its own. With `udpPort`,
 // also re-sent as UDP datagrams to udp://<host>:<udpPort> (QGroundControl,
 // GStreamer). Resolves to { server, url, udp, close() }.
-function serveVideo(session, { host, port, reservation, udpPort = null, log }){
+function serveVideo(session, { host, port, reservation, udpPort = null, fallbackPort = false, log }){
   const target = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host,
     videoPath = `/${reservation}/video.ts`,
     server = http.createServer((req, res) => {
@@ -364,20 +392,34 @@ function serveVideo(session, { host, port, reservation, udpPort = null, log }){
     }, { persistent: true });
   }
   return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(port, host, () => resolve({
-      server,
-      url: `http://${target.includes(':') ? `[${target}]` : target}:${server.address().port}${videoPath}`,
-      udp: udpPort ? `udp://${target}:${udpPort}` : null,
-      close: () => {
-        server.close();
-        server.closeAllConnections?.();
-        if (udpCh !== null){
-          session.close(udpCh);
+    const finish = (actualPort) => resolve({
+        server,
+        url: `http://${target.includes(':') ? `[${target}]` : target}:${actualPort}${videoPath}`,
+        udp: udpPort ? `udp://${target}:${udpPort}` : null,
+        close: () => {
+          server.close();
+          server.closeAllConnections?.();
+          if (udpCh !== null){
+            session.close(udpCh);
+          }
+          udp?.close();
         }
-        udp?.close();
-      }
-    }));
+      }),
+      onError = (err) => {
+        err.port ??= port;
+        if (err.code !== 'EADDRINUSE' || !fallbackPort){
+          return reject(err);
+        }
+        server.removeListener('error', onError);
+        server.once('error', reject);
+        server.listen(0, host, () => {
+          const availablePort = server.address().port;
+          log(`Default local video port ${port} is in use; using ${availablePort} instead.`);
+          finish(availablePort);
+        });
+      };
+    server.once('error', onError);
+    server.listen(port, host, () => finish(server.address().port));
   });
 }
 

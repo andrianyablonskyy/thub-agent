@@ -490,7 +490,7 @@ program
   .option('--forward <name=port>', 'Forward a named service on localhost of the Client (repeatable)', collectRepeatable, [])
   .option('--rtt <index=address,size[,channel]>', 'Read an ST-Link RTT up-channel over a local TCP port (repeatable)', collectRepeatable, [])
   .option('--json', 'NDJSON on stdout: "ready" with the ports once connected, then status/disconnected/connected/video/fatal events', false)
-  .action(async (name, opts) => {
+  .action(async (name, opts, command) => {
     try {
       try {
         opts.forward = parseForwards(opts.forward);
@@ -510,6 +510,11 @@ program
       }
       const session = await remoteSession(name),
         log = (m) => console.error(m),
+        fallbackPorts = {
+          uart: command.getOptionValueSource('uartPort') === 'default',
+          gdb: command.getOptionValueSource('gdbPort') === 'default',
+          video: command.getOptionValueSource('videoPort') === 'default'
+        },
         // --json: NDJSON on stdout — `ready` (the ports, below), then one line
         // per change, for tools such as the VS Code extension. The human
         // messages still go to stderr.
@@ -548,12 +553,13 @@ program
         listening = (async () => {
           const local = await listenLocal(session, devices, {
               host: opts.bind, uartBase: opts.uartPort, gdbBase: opts.gdbPort, target: opts.target,
-              forwards: opts.forward, rtts: opts.rtt, log
+              forwards: opts.forward, rtts: opts.rtt, fallbackPorts, log
             }),
             // The camera (README §5.7) on a URL with this reservation's own id in it.
             video = devices.camera
               ? await serveVideo(session, {
-                host: opts.bind, port: opts.videoPort, reservation: session.url.split('/').pop(), udpPort: opts.videoUdp, log
+                host: opts.bind, port: opts.videoPort, reservation: session.url.split('/').pop(), udpPort: opts.videoUdp,
+                fallbackPort: fallbackPorts.video, log
               })
               : null;
           return { ...local, video };

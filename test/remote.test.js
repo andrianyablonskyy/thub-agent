@@ -3,7 +3,7 @@
 const test = require('node:test'),
   assert = require('node:assert/strict'),
   net = require('node:net'),
-  { listenLocal, parseForwards, parseRtts } = require('../src/remote');
+  { listenLocal, serveVideo, parseForwards, parseRtts } = require('../src/remote');
 
 test('connect parses repeatable named Client ports and rejects ambiguous or invalid services', () => {
   assert.deepEqual(parseForwards(['Web UI=3000', 'MQTT=1883']), [
@@ -120,4 +120,64 @@ test('a named service listener bridges TCP data to and from the Client channel',
   currentHandler.data(Buffer.from('response'));
   const response = await responsePromise;
   assert.equal(response, 'response');
+});
+
+test('a default GDB port conflict falls back to an available local port', async (t) => {
+  const occupied = net.createServer(),
+    occupiedPort = await new Promise((resolve, reject) => {
+      occupied.once('error', reject);
+      occupied.listen(0, '127.0.0.1', () => resolve(occupied.address().port));
+    }),
+    messages = [],
+    local = await listenLocal({ open(){} }, { uarts: [], probes: [{ index: 1 }] }, {
+      host: '127.0.0.1',
+      gdbBase: occupiedPort,
+      fallbackPorts: { gdb: true },
+      log: (message) => messages.push(message)
+    });
+  t.after(() => {
+    local.servers.forEach((server) => server.close());
+    occupied.close();
+  });
+  assert.equal(local.ports.length, 1);
+  assert.notEqual(local.ports[0].port, occupiedPort);
+  assert.match(messages[0], new RegExp(`Default local GDB port ${occupiedPort} is in use; using \\d+ instead`));
+});
+
+test('an explicitly requested GDB port conflict reports its port', async (t) => {
+  const occupied = net.createServer(),
+    occupiedPort = await new Promise((resolve, reject) => {
+      occupied.once('error', reject);
+      occupied.listen(0, '127.0.0.1', () => resolve(occupied.address().port));
+    });
+  t.after(() => occupied.close());
+  await assert.rejects(
+    listenLocal({ open(){} }, { uarts: [], probes: [{ index: 1 }] }, {
+      host: '127.0.0.1', gdbBase: occupiedPort, fallbackPorts: {}, log(){}
+    }),
+    (err) => err.code === 'EADDRINUSE' && err.port === occupiedPort
+  );
+});
+
+test('a default video port conflict falls back and reports the actual URL', async (t) => {
+  const occupied = net.createServer(),
+    occupiedPort = await new Promise((resolve, reject) => {
+      occupied.once('error', reject);
+      occupied.listen(0, '127.0.0.1', () => resolve(occupied.address().port));
+    }),
+    messages = [],
+    video = await serveVideo({ open(){}, close(){} }, {
+      host: '127.0.0.1',
+      port: occupiedPort,
+      reservation: 'reservation',
+      fallbackPort: true,
+      log: (message) => messages.push(message)
+    });
+  t.after(() => {
+    video.close();
+    occupied.close();
+  });
+  assert.notEqual(Number(new URL(video.url).port), occupiedPort);
+  assert.match(video.url, /\/reservation\/video\.ts$/);
+  assert.match(messages[0], new RegExp(`Default local video port ${occupiedPort} is in use; using \\d+ instead`));
 });
