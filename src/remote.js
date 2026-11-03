@@ -18,7 +18,9 @@ const net = require('node:net'),
   http = require('node:http'),
   dgram = require('node:dgram'),
   { EventEmitter } = require('node:events'),
-  { decodeData, dataMessages, parseControl, backoffMs, REMOTE_CLOSE, SERVICE_NAME_RE, validRttConfig } = require('@andrian.yablonskyy/thub-common');
+  {
+    decodeData, dataMessages, parseControl, backoffMs, REMOTE_CLOSE, SERVICE_NAME_RE, OPENOCD_TARGET_RE, validRttConfig
+  } = require('@andrian.yablonskyy/thub-common');
 
 // Without a ping from the Coordinator (every 30 s) for this long, the
 // connection is taken for dead and made again.
@@ -331,7 +333,10 @@ function listenLocal(session, devices, { host, uartBase, gdbBase, target, forwar
         device: { index: rtt.index, label: `RTT channel ${rtt.channel}` },
         port: await listen(0, bridge('rtt', rtt.index, {
           readOnly: true,
-          extra: { address: rtt.address, size: rtt.size, channel: rtt.channel, ...(target ? { target } : {}) }
+          extra: {
+            address: rtt.address, size: rtt.size, channel: rtt.channel,
+            ...(rtt.target || target ? { target: rtt.target || target } : {})
+          }
         }))
       })),
       ...forwards.map(async ({ name, port: clientPort }) => ({
@@ -448,18 +453,20 @@ function parseRtts(values){
     const split = value.indexOf('='),
       index = Number(value.slice(0, split)),
       fields = value.slice(split + 1).split(','),
-      [address, size, channelText] = fields,
+      [address, size, channelText, target] = fields,
       channel = channelText === undefined ? 0 : Number(channelText);
     if (split < 1 || !/^\d+$/.test(value.slice(0, split)) || !Number.isInteger(index) || index < 1 || index > 64 ||
-        fields.length < 2 || fields.length > 3 || (channelText !== undefined && !/^\d+$/.test(channelText)) ||
+        fields.length < 2 || fields.length > 4 || (channelText !== undefined && !/^\d+$/.test(channelText)) ||
+        (target !== undefined && !OPENOCD_TARGET_RE.test(target)) ||
         !validRttConfig({ address, size, channel })){
-      throw new Error(`--rtt ${value}: use a probe index, RAM address, search size, and optional channel, e.g. --rtt 1=0x20000000,0x10000,0`);
+      throw new Error(`--rtt ${value}: use probe index, RAM address, search size, optional channel and target, ` +
+        'e.g. --rtt 1=0x20000000,0x10000,0,stm32g4x');
     }
     if (seen.has(index)){
       throw new Error(`--rtt: ST-Link ${index} is repeated`);
     }
     seen.add(index);
-    return { index, address, size, channel };
+    return { index, address, size, channel, ...(target ? { target } : {}) };
   });
 }
 

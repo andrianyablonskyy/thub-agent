@@ -488,7 +488,7 @@ program
   .option('--video-port <port>', 'Local HTTP port of the board\'s USB camera stream, if it has one', (v) => Number(v), 8090)
   .option('--video-udp <port>', 'Also send the camera stream as UDP (MPEG-TS) to this local port, e.g. 5600', (v) => Number(v))
   .option('--forward <name=port>', 'Forward a named service on localhost of the Client (repeatable)', collectRepeatable, [])
-  .option('--rtt <index=address,size[,channel]>', 'Read an ST-Link RTT up-channel over a local TCP port (repeatable)', collectRepeatable, [])
+  .option('--rtt <index=address,size[,channel[,target]]>', 'Read an ST-Link RTT up-channel over a local TCP port (repeatable)', collectRepeatable, [])
   .option('--json', 'NDJSON on stdout: "ready" with the ports once connected, then status/disconnected/connected/video/fatal events', false)
   .action(async (name, opts, command) => {
     try {

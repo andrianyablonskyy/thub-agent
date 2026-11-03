@@ -2,6 +2,12 @@
 
 What changed in each release, newest first. `## Unreleased` collects the changes since the version on npm; `bin/publish` turns that heading into the version and date it releases.
 
+## Unreleased
+
+### Added
+
+- **Per-reader RTT target:** `thub connect --rtt` accepts an optional OpenOCD target after the channel, so each RTT reader can select the right target when the Client has no target configured.
+
 ## 1.1.26 — 2026-11-02
 
 ### Changed

@@ -16,13 +16,16 @@ test('connect parses repeatable named Client ports and rejects ambiguous or inva
   assert.throws(() => parseForwards(['Web UI=3000', 'web ui=8080']), /repeated/);
 });
 
-test('connect parses a repeated RTT config with a validated memory range', () => {
+test('connect parses repeated RTT configs with validated memory ranges and optional targets', () => {
   assert.deepEqual(parseRtts(['1=0x20000000,0x10000', '2=536870912,65536,1']), [
     { index: 1, address: '0x20000000', size: '0x10000', channel: 0 },
     { index: 2, address: '536870912', size: '65536', channel: 1 }
   ]);
+  assert.deepEqual(parseRtts(['1=0x20000000,0x10000,0,stm32g4x']), [
+    { index: 1, address: '0x20000000', size: '0x10000', channel: 0, target: 'stm32g4x' }
+  ]);
   for (const value of ['1=0x20000000', '0=0x20000000,0x10000', '1=0x20000000,0,0', '1=0x20000000,0x10000,256',
-    '1=0x20000000;shutdown,0x10000']){
+    '1=0x20000000;shutdown,0x10000', '1=0x20000000,0x10000,0,stm32g4x -c shutdown']){
     assert.throws(() => parseRtts([value]), /--rtt/);
   }
   assert.throws(() => parseRtts(['1=0x20000000,0x10000', '1=0x20000000,0x10000']), /repeated/);
@@ -71,7 +74,7 @@ test('a named service listener bridges TCP data to and from the Client channel',
         open(kind, index, current, options){
           assert.equal(kind, 'rtt');
           assert.equal(index, 1);
-          assert.deepEqual(options.extra, { address: '0x20000000', size: '0x10000', channel: 0 });
+          assert.deepEqual(options.extra, { address: '0x20000000', size: '0x10000', channel: 0, target: 'stm32g4x' });
           resolveChannel(current);
           return 9;
         },
@@ -81,7 +84,7 @@ test('a named service listener bridges TCP data to and from the Client channel',
         close(){}
       },
       local = await listenLocal(session, { uarts: [], probes: [] }, {
-        host: '127.0.0.1', rtts: [{ index: 1, address: '0x20000000', size: '0x10000', channel: 0 }], log(){}
+        host: '127.0.0.1', rtts: [{ index: 1, address: '0x20000000', size: '0x10000', channel: 0, target: 'stm32g4x' }], log(){}
       }),
       client = net.connect(local.ports[0].port, '127.0.0.1');
     t.after(() => {
